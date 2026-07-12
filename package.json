@@ -1,0 +1,29 @@
+{
+  "name": "full-stack-learning",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "type": "module",
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "check-types": "turbo run check-types",
+    "dev:web": "turbo run dev -F web",
+    "check": "biome check --write ."
+  },
+  "dependencies": {
+    "@full-stack-learning/env": "workspace:*",
+    "dotenv": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.2",
+    "@full-stack-learning/config": "workspace:*",
+    "@types/node": "^22.13.14",
+    "turbo": "^2.10.2",
+    "typescript": "catalog:"
+  },
+  "packageManager": "pnpm@11.9.0"
+}

@@ -1,0 +1,3 @@
+{
+  "extends": "@full-stack-learning/config/tsconfig.base.json"
+}

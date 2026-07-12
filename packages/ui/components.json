@@ -1,0 +1,24 @@
+{
+  "$schema": "https://ui.shadcn.com/schema.json",
+  "style": "base-lyra",
+  "rsc": true,
+  "tsx": true,
+  "tailwind": {
+    "config": "",
+    "css": "src/styles/globals.css",
+    "baseColor": "neutral",
+    "cssVariables": true,
+    "prefix": ""
+  },
+  "iconLibrary": "lucide",
+  "aliases": {
+    "components": "@full-stack-learning/ui/components",
+    "utils": "@full-stack-learning/ui/lib/utils",
+    "hooks": "@full-stack-learning/ui/hooks",
+    "lib": "@full-stack-learning/ui/lib",
+    "ui": "@full-stack-learning/ui/components"
+  },
+  "menuColor": "default",
+  "menuAccent": "subtle",
+  "registries": {}
+}
