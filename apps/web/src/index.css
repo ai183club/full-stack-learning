@@ -1,1 +1,288 @@
 @import "@full-stack-learning/ui/globals.css";
+
+:root {
+	color-scheme: light;
+	--ink: #202124;
+	--subtle-ink: #5f6368;
+	--line: #dfe1e5;
+	--blue: #3f67d9;
+	--blue-hover: #3156c4;
+	--error: #b3261e;
+}
+
+html,
+body {
+	min-height: 100%;
+}
+
+body {
+	margin: 0;
+	background: #fff;
+	color: var(--ink);
+	font-family: Arial, "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+button,
+input {
+	font: inherit;
+}
+
+.profile-home {
+	display: grid;
+	min-height: 100svh;
+	place-items: start center;
+	padding: clamp(10rem, 24vh, 16rem) 1.5rem 5rem;
+}
+
+.profile-search {
+	width: min(100%, 56rem);
+	text-align: center;
+}
+
+.brand {
+	position: relative;
+	display: inline-flex;
+	align-items: flex-start;
+	margin-bottom: 1.75rem;
+	user-select: none;
+}
+
+.brand-word {
+	font-size: clamp(6.4rem, 7.8vw, 7.1rem);
+	font-weight: 650;
+	letter-spacing: -0.075em;
+	line-height: 0.95;
+	background: linear-gradient(
+		105deg,
+		#315bc8 4%,
+		#315bc8 45%,
+		#ee6a5a 46%,
+		#ee6a5a 62%,
+		#e8ae3b 63%,
+		#e8ae3b 73%,
+		#2b9678 74%
+	);
+	-webkit-background-clip: text;
+	background-clip: text;
+	color: transparent;
+}
+
+.brand-pixel {
+	width: 0.45rem;
+	height: 0.45rem;
+	margin: 0.08rem 0 0 0.3rem;
+	background: #ee6a5a;
+	box-shadow:
+		0.55rem 0.55rem 0 #e8ae3b,
+		0 1.1rem 0 #2b9678;
+}
+
+.search-form {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+}
+
+.search-field {
+	display: flex;
+	width: 100%;
+	height: 4rem;
+	align-items: center;
+	padding: 0.5rem 0.5rem 0.5rem 2.5rem;
+	border: 1px solid var(--line);
+	border-radius: 999px;
+	background: #fff;
+	box-shadow: 0 1px 6px rgb(32 33 36 / 18%);
+	transition:
+		border-color 160ms ease,
+		box-shadow 160ms ease,
+		transform 160ms ease;
+}
+
+.search-field:hover,
+.search-field:focus-within {
+	border-color: transparent;
+	box-shadow: 0 1px 6px rgb(32 33 36 / 24%);
+}
+
+.search-field:focus-within {
+	transform: none;
+}
+
+.search-field input {
+	width: 100%;
+	min-width: 0;
+	border: 0;
+	background: transparent;
+	color: var(--ink);
+	font-size: 1.4rem;
+	line-height: 1.5;
+	outline: 0;
+}
+
+.search-field input::placeholder {
+	color: #80868b;
+}
+
+.search-field input:disabled {
+	cursor: wait;
+}
+
+.generate-button {
+	display: inline-flex;
+	min-width: 10rem;
+	height: 2.75rem;
+	align-items: center;
+	justify-content: center;
+	gap: 0.35rem;
+	border: 0;
+	border-radius: 999px;
+	background: #f1f3f4;
+	color: #202124;
+	font-size: 1.12rem;
+	font-weight: 500;
+	letter-spacing: 0.01em;
+	box-shadow: none;
+	cursor: pointer;
+	transition:
+		background 150ms ease,
+		border-color 150ms ease,
+		box-shadow 150ms ease,
+		transform 150ms ease;
+}
+
+.generate-button:hover:not(:disabled) {
+	background: #e8eaed;
+	box-shadow: none;
+	transform: none;
+}
+
+.generate-button:active:not(:disabled) {
+	transform: translateY(0);
+}
+
+.generate-button:focus-visible {
+	outline: 2px solid #5f6368;
+	outline-offset: 2px;
+}
+
+.generate-button:disabled {
+	opacity: 0.72;
+	cursor: wait;
+}
+
+.button-spinner {
+	width: 0.9rem;
+	height: 0.9rem;
+	border: 2px solid #bdc1c6;
+	border-top-color: #3c4043;
+	border-radius: 50%;
+	animation: spin 700ms linear infinite;
+}
+
+.response-region {
+	width: 100%;
+	min-height: 2rem;
+	margin: 2.5rem auto 0;
+}
+
+.form-error {
+	margin: 0;
+	color: var(--error);
+	font-size: 0.9rem;
+}
+
+.bio-result {
+	padding: 2rem 2.25rem 2.2rem;
+	border: 1px solid #e5e8ef;
+	border-radius: 1.1rem;
+	background: rgb(255 255 255 / 88%);
+	box-shadow: 0 8px 30px rgb(38 56 88 / 8%);
+	text-align: left;
+	animation: result-in 240ms ease-out;
+}
+
+.result-label {
+	margin: 0 0 1rem;
+	color: var(--blue);
+	font-size: 1rem;
+	font-weight: 700;
+	letter-spacing: 0.1em;
+	text-transform: uppercase;
+}
+
+.result-bio {
+	margin: 0;
+	color: #3c4043;
+	font-size: 1.35rem;
+	line-height: 1.8;
+}
+
+@keyframes spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+@keyframes result-in {
+	from {
+		opacity: 0;
+		transform: translateY(0.4rem);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+@media (max-width: 40rem) {
+	.profile-home {
+		padding: 18svh 1rem 3rem;
+	}
+
+	.brand {
+		margin-bottom: 2rem;
+	}
+
+	.brand-word {
+		font-size: clamp(3.8rem, 16vw, 5rem);
+	}
+
+	.search-field {
+		height: 3.75rem;
+		padding: 0.4rem 0.4rem 0.4rem 1.25rem;
+	}
+
+	.search-field input {
+		font-size: 1.12rem;
+	}
+
+	.generate-button {
+		min-width: 8rem;
+		height: 2.85rem;
+		font-size: 1rem;
+	}
+
+	.response-region {
+		margin-top: 2.25rem;
+	}
+
+	.bio-result {
+		padding: 1.5rem;
+	}
+
+	.result-bio {
+		font-size: 1.12rem;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		scroll-behavior: auto;
+		animation-duration: 0.01ms;
+		animation-iteration-count: 1;
+		transition-duration: 0.01ms;
+	}
+}

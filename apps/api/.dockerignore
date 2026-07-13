@@ -1,0 +1,7 @@
+.env
+.env.*
+Dockerfile
+README.md
+cmd/checkdb
+cmd/findprofile
+**/*_test.go

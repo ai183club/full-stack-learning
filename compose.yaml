@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: full-stack-learning-postgres
+    environment:
+      POSTGRES_DB: profile_db
+      POSTGRES_USER: profile_user
+      POSTGRES_PASSWORD: profile_password
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U profile_user -d profile_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  postgres_data:

@@ -1,5 +1,9 @@
 # full-stack-learning
 
+## AWS Go 云原生学习项目
+
+Go Profile API 的本地运行、Docker 构建和 Amazon ECR 推送说明位于 [apps/api/README.md](apps/api/README.md)。当前已推送的 ECR 镜像版本会在该文档中以 tag 和 digest 记录，供后续 ECS Fargate 部署使用。
+
 This project was created with [Better-T-Stack](https://github.com/AmanVarshney01/create-better-t-stack), a modern TypeScript stack that combines Next.js, and more.
 
 ## Features
