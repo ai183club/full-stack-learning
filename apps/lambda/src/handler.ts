@@ -54,6 +54,9 @@ export function createHandler(dependencies: HandlerDependencies) {
 	): Promise<LambdaResponse> {
 		const method = event.requestContext?.http?.method?.toUpperCase() ?? "GET";
 		const path = event.rawPath ?? event.path ?? "/";
+		if (method === "OPTIONS") {
+			return { statusCode: 204, headers: {}, body: "" };
+		}
 		const route = resolveRoute(method, path);
 
 		if (route === "not-found") {

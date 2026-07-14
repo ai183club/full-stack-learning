@@ -56,6 +56,25 @@ function createSuccessfulHandler(
 	return { handler, calls };
 }
 
+test("answers CORS preflight requests without calling the Go service", async () => {
+	const { handler, calls } = createSuccessfulHandler();
+
+	const result = await handler(
+		event("OPTIONS", "/api/profiles/generate-bio", {
+			headers: {
+				origin: "https://pr-2.preview.seebyte.xyz",
+				"access-control-request-method": "POST",
+				"access-control-request-headers": "content-type",
+			},
+		}),
+	);
+
+	assert.equal(result.statusCode, 204);
+	assert.equal(result.body, "");
+	assert.deepEqual(result.headers, {});
+	assert.equal(calls.length, 0);
+});
+
 test("forwards public profile reads to the private Go service", async () => {
 	const { handler, calls } = createSuccessfulHandler(
 		200,
