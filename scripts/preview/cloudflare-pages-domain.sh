@@ -33,8 +33,8 @@ case "$PAGES_DOMAIN_ACTION" in
     fetch_domain
     if [ "$domain_http" = 404 ]; then
       payload=$(jq -n --arg name "$PAGES_DOMAIN" '{name:$name}')
-      response=$(curl --fail-with-body -sS -X POST -H "$auth_header" -H 'Content-Type: application/json' --data "$payload" "$base_url")
-      printf '%s' "$response" | jq -e '.success == true' >/dev/null
+      domain_http=$(curl -sS -o "$domain_response" -w '%{http_code}' -X POST -H "$auth_header" -H 'Content-Type: application/json' --data "$payload" "$base_url" || true)
+      require_successful_response
     else
       require_successful_response
     fi
@@ -43,8 +43,8 @@ case "$PAGES_DOMAIN_ACTION" in
     fetch_domain
     if [ "$domain_http" != 404 ]; then
       require_successful_response
-      response=$(curl --fail-with-body -sS -X DELETE -H "$auth_header" "$base_url/$PAGES_DOMAIN")
-      printf '%s' "$response" | jq -e '.success == true' >/dev/null
+      domain_http=$(curl -sS -o "$domain_response" -w '%{http_code}' -X DELETE -H "$auth_header" "$base_url/$PAGES_DOMAIN" || true)
+      require_successful_response
     fi
     ;;
   wait)
