@@ -91,6 +91,9 @@ jobs:
             echo 'API Gateway custom domain target was not returned' >&2
             exit 1
           fi
-          RECORD_NAME="${{ steps.preview.outputs.api_host }}" RECORD_TARGET="$api_target" sh scripts/preview/cloudflare-dns.sh
+          # API Gateway custom domains require the client SNI to match the
+          # preview hostname. Keep this exact record DNS-only so Cloudflare
+          # does not proxy the origin handshake with the execute-api hostname.
+          RECORD_NAME="${{ steps.preview.outputs.api_host }}" RECORD_TARGET="$api_target" RECORD_PROXIED=false sh scripts/preview/cloudflare-dns.sh
           PAGES_DOMAIN="${{ steps.preview.outputs.web_host }}" PAGES_DOMAIN_ACTION=wait sh scripts/preview/cloudflare-pages-domain.sh
           WEB_URL="https://${{ steps.preview.outputs.web_host }}" API_URL="https://${{ steps.preview.outputs.api_host }}" sh scripts/preview/smoke-pr.sh
