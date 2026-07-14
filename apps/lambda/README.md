@@ -35,11 +35,11 @@ http://profile-api.app.internal:8080
 OpenRouter配置只属于Lambda运行环境：
 
 ```text
-OPENROUTER_API_KEY=<server-side secret>
+OPENROUTER_API_KEY=<OpenRouter API key>
 OPENROUTER_MODEL=google/gemma-4-31b-it:free
 ```
 
-`OPENROUTER_MODEL`可省略，以上模型是代码默认值。API Key不得写入Web环境变量、Git仓库或请求日志。由于模型请求超时为20秒，部署时Lambda Function timeout至少配置为30秒。
+当前仅使用 `OPENROUTER_API_KEY`。API Key不得写入Web环境变量、Git仓库或请求日志；部署时Lambda Function timeout至少配置为60秒。
 
 Lambda启用模型推理，但不额外传递输出或推理 token 预算、也不要求上游隐藏 reasoning；这样与已验证的 OpenRouter 请求保持一致。Bio 长度由提示词、Lambda 和 Go 的500个 Unicode 字符校验共同保证。仅当OpenRouter返回429、502、503或504时，在同一个20秒总超时内进行一次受控重试；401等配置或客户端错误不会重试。
 

@@ -20,7 +20,7 @@ export class BioGenerationError extends Error {
 
 type OpenRouterDependencies = {
 	fetch: Fetch;
-	getApiKey: () => string | undefined;
+	getApiKey: () => string | undefined | Promise<string | undefined>;
 	getModel: () => string | undefined;
 	requestTimeoutMs: number;
 	retryDelayMs?: number;
@@ -34,7 +34,7 @@ export function createOpenRouterBioGenerator(
 	dependencies: OpenRouterDependencies,
 ) {
 	return async function generateBio(name: string): Promise<string> {
-		const apiKey = dependencies.getApiKey()?.trim();
+		const apiKey = (await dependencies.getApiKey())?.trim();
 		if (!apiKey) {
 			throw new BioGenerationError(
 				"OPENROUTER_API_KEY is not configured",

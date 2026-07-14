@@ -1,137 +1,99 @@
-name: Validate PR Preview Contract
+name: Deploy PR Preview
 
 on:
   pull_request:
     types: [opened, reopened, synchronize]
-    paths:
-      - "apps/api/**"
-      - "apps/lambda/**"
-      - "apps/web/**"
-      - "apps/db-bootstrap/**"
-      - "buildspec.yml"
-      - "pnpm-lock.yaml"
-      - "package.json"
-      - "turbo.json"
-      - "scripts/preview/**"
-      - ".github/workflows/pr-preview-validate.yml"
+    paths: ["apps/api/**", "apps/lambda/**", "apps/web/**", "apps/db-bootstrap/**", "scripts/preview/**", "buildspec.preview*.yml", ".github/workflows/pr-preview-validate.yml", "package.json", "pnpm-lock.yaml"]
   workflow_dispatch:
     inputs:
-      pr_number:
-        description: "Existing GitHub PR number"
-        required: true
-        type: string
-      git_sha:
-        description: "Commit SHA to validate"
-        required: true
-        type: string
+      pr_number: { required: true, type: string }
+      git_sha: { required: true, type: string }
 
-permissions:
-  contents: read
-  id-token: write
-  pull-requests: read
+permissions: { contents: read, id-token: write, pull-requests: read }
+
+concurrency:
+  group: pr-preview-${{ github.event.pull_request.number || inputs.pr_number }}
+  cancel-in-progress: false
 
 jobs:
-  classify:
+  deploy:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
-    outputs:
-      api_or_web_changed: ${{ github.event_name == 'workflow_dispatch' && 'true' || steps.changes.outputs.api_or_web }}
-      lambda_changed: ${{ github.event_name == 'workflow_dispatch' && 'true' || steps.changes.outputs.lambda }}
-    steps:
-      - uses: dorny/paths-filter@v3
-        id: changes
-        if: github.event_name == 'pull_request'
-        with:
-          filters: |
-            api_or_web:
-              - 'apps/api/**'
-              - 'apps/web/**'
-              - 'apps/db-bootstrap/**'
-              - 'buildspec.yml'
-              - 'pnpm-lock.yaml'
-              - 'package.json'
-              - 'turbo.json'
-            lambda:
-              - 'apps/lambda/**'
-              - 'pnpm-lock.yaml'
-              - 'package.json'
-
-  validate:
-    needs: classify
-    runs-on: ubuntu-latest
+    environment: preview
     steps:
       - uses: actions/checkout@v4
-
-      - name: Derive safe preview resource names
-        id: preview
+      - id: preview
         env:
           PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
           GIT_SHA: ${{ github.event.pull_request.head.sha || inputs.git_sha }}
         run: sh scripts/preview/pr-context.sh
-
-      - name: Report preview contract
-        env:
-          API_OR_WEB_CHANGED: ${{ needs.classify.outputs.api_or_web_changed }}
-          LAMBDA_CHANGED: ${{ needs.classify.outputs.lambda_changed }}
-          DATABASE_SCHEMA: ${{ steps.preview.outputs.schema }}
-          ECS_SERVICE: ${{ steps.preview.outputs.ecs_service }}
-          TARGET_GROUP: ${{ steps.preview.outputs.target_group }}
-          WEB_HOST: ${{ steps.preview.outputs.web_host }}
-          API_HOST: ${{ steps.preview.outputs.api_host }}
-        run: |
-          {
-            echo "## PR Preview contract"
-            echo
-            echo "- API/Web preview required: \`${API_OR_WEB_CHANGED}\`"
-            echo "- Lambda-only validation required: \`${LAMBDA_CHANGED}\`"
-            echo "- Schema: \`${DATABASE_SCHEMA}\`"
-            echo "- ECS service: \`${ECS_SERVICE}\`"
-            echo "- Target group: \`${TARGET_GROUP}\`"
-            echo "- Web: \`https://${WEB_HOST}\`"
-            echo "- API: \`https://${API_HOST}\`"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  build_preview_image:
-    needs: [classify, validate]
-    if: >-
-      needs.classify.outputs.api_or_web_changed == 'true' &&
-      (github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository)
-    runs-on: ubuntu-latest
-    environment: preview
-    steps:
-      - name: Configure preview AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: ap-northeast-1
           role-to-assume: ${{ secrets.AWS_PREVIEW_ROLE_ARN }}
-
-      - name: Start preview image build
-        id: build
-        shell: bash
+      - id: image
         env:
-          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
+          PR_NUMBER: ${{ steps.preview.outputs.pr_number }}
           SOURCE_SHA: ${{ github.event.pull_request.head.sha || inputs.git_sha }}
         run: |
           set -euo pipefail
-          build_id="$(aws codebuild start-build \
-            --project-name profile-preview-deploy \
-            --source-version "$SOURCE_SHA" \
-            --environment-variables-override "name=PR_NUMBER,value=$PR_NUMBER,type=PLAINTEXT" \
-            --query 'build.id' \
-            --output text)"
-          echo "id=$build_id" >> "$GITHUB_OUTPUT"
-
-      - name: Wait for preview image build
-        shell: bash
+          show_build_failure() {
+            build="$(aws codebuild batch-get-builds --ids "$id" --output json)"
+            printf '%s\n' "$build" | jq '{builds:[.builds[] | {id,buildNumber,buildStatus,currentPhase,phases,logs:{groupName:.logs.groupName,streamName:.logs.streamName,deepLink:.logs.deepLink}}],buildsNotFound}'
+            log_group="$(printf '%s' "$build" | jq -r '.builds[0].logs.groupName')"
+            log_stream="$(printf '%s' "$build" | jq -r '.builds[0].logs.streamName')"
+            aws logs get-log-events --log-group-name "$log_group" --log-stream-name "$log_stream" --start-from-head --query 'events[].message' --output text || true
+          }
+          id="$(aws codebuild start-build --project-name profile-preview-deploy --source-version "$SOURCE_SHA" --environment-variables-override "name=PR_NUMBER,value=$PR_NUMBER,type=PLAINTEXT" --query 'build.id' --output text)"
+          while :; do status="$(aws codebuild batch-get-builds --ids "$id" --query 'builds[0].buildStatus' --output text)"; case "$status" in SUCCEEDED) break;; FAILED|FAULT|STOPPED|TIMED_OUT) show_build_failure; exit 1;; *) sleep 10;; esac; done
+          digest="$(aws ecr describe-images --repository-name profile-api --image-ids imageTag=${{ steps.preview.outputs.image_tag }} --query 'imageDetails[0].imageDigest' --output text)"
+          echo "image_uri=017719539487.dkr.ecr.ap-northeast-1.amazonaws.com/profile-api@$digest" >> "$GITHUB_OUTPUT"
+      - name: Create or update AWS preview resources in CodeBuild
+        env:
+          PR_NUMBER: ${{ steps.preview.outputs.pr_number }}
+          GIT_SHA: ${{ github.event.pull_request.head.sha || inputs.git_sha }}
+          IMAGE_URI: ${{ steps.image.outputs.image_uri }}
         run: |
           set -euo pipefail
-          while true; do
-            status="$(aws codebuild batch-get-builds \
-              --ids "${{ steps.build.outputs.id }}" \
-              --query 'builds[0].buildStatus' \
-              --output text)"
-            case "$status" in
-              SUCCEEDED) exit 0 ;;
-              FAILED|FAULT|STOPPED|TIMED_OUT) echo "CodeBuild finished with $status" >&2; exit 1 ;;
-              *) sleep 10 ;;
-            esac
-          done
+          show_build_failure() {
+            build="$(aws codebuild batch-get-builds --ids "$id" --output json)"
+            printf '%s\n' "$build" | jq '{builds:[.builds[] | {id,buildNumber,buildStatus,currentPhase,phases,logs:{groupName:.logs.groupName,streamName:.logs.streamName,deepLink:.logs.deepLink}}],buildsNotFound}'
+            log_group="$(printf '%s' "$build" | jq -r '.builds[0].logs.groupName')"
+            log_stream="$(printf '%s' "$build" | jq -r '.builds[0].logs.streamName')"
+            aws logs get-log-events --log-group-name "$log_group" --log-stream-name "$log_stream" --start-from-head --query 'events[].message' --output text || true
+          }
+          id="$(aws codebuild start-build --project-name profile-preview-deploy --source-version "$GIT_SHA" --buildspec-override buildspec.preview-deploy.yml --environment-variables-override "name=PR_NUMBER,value=$PR_NUMBER,type=PLAINTEXT" "name=GIT_SHA,value=$GIT_SHA,type=PLAINTEXT" "name=IMAGE_URI,value=$IMAGE_URI,type=PLAINTEXT" --query 'build.id' --output text)"
+          while :; do status="$(aws codebuild batch-get-builds --ids "$id" --query 'builds[0].buildStatus' --output text)"; case "$status" in SUCCEEDED) break;; FAILED|FAULT|STOPPED|TIMED_OUT) show_build_failure; exit 1;; *) sleep 10;; esac; done
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.9.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build, deploy, and map preview web
+        env:
+          NEXT_PUBLIC_PROFILE_API_URL: https://${{ steps.preview.outputs.api_host }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+          CLOUDFLARE_PAGES_PROJECT: ${{ secrets.CLOUDFLARE_PAGES_PROJECT }}
+          RECORD_NAME: ${{ steps.preview.outputs.web_host }}
+          RECORD_TARGET: ${{ steps.preview.outputs.preview_branch }}.${{ secrets.CLOUDFLARE_PAGES_PROJECT }}.pages.dev
+        run: |
+          pnpm --filter web build
+          npx --yes wrangler@4 pages deploy apps/web/out --project-name="$CLOUDFLARE_PAGES_PROJECT" --branch="${{ steps.preview.outputs.preview_branch }}"
+          PAGES_DOMAIN="$RECORD_NAME" PAGES_DOMAIN_ACTION=ensure sh scripts/preview/cloudflare-pages-domain.sh
+          sh scripts/preview/cloudflare-dns.sh
+          api_target="$(aws apigatewayv2 get-domain-name --domain-name '${{ steps.preview.outputs.api_host }}' --query 'DomainNameConfigurations[0].ApiGatewayDomainName' --output text)"
+          if [ -z "$api_target" ] || [ "$api_target" = None ]; then
+            echo 'API Gateway custom domain target was not returned' >&2
+            exit 1
+          fi
+          # API Gateway custom domains require the client SNI to match the
+          # preview hostname. Keep this exact record DNS-only so Cloudflare
+          # does not proxy the origin handshake with the execute-api hostname.
+          RECORD_NAME="${{ steps.preview.outputs.api_host }}" RECORD_TARGET="$api_target" RECORD_PROXIED=false sh scripts/preview/cloudflare-dns.sh
+          PAGES_DOMAIN="${{ steps.preview.outputs.web_host }}" PAGES_DOMAIN_ACTION=wait sh scripts/preview/cloudflare-pages-domain.sh
+          WEB_URL="https://${{ steps.preview.outputs.web_host }}" API_URL="https://${{ steps.preview.outputs.api_host }}" API_CONNECT_TARGET="$api_target" sh scripts/preview/smoke-pr.sh

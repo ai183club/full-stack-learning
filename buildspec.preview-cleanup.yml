@@ -1,0 +1,13 @@
+version: 0.2
+phases:
+  build:
+    commands:
+      - set -eu
+      - |
+        deployed_bootstrap="$(aws ecs describe-task-definition --region "$AWS_REGION" --task-definition "profile-db-bootstrap-pr-$PR_NUMBER" --query 'taskDefinition.containerDefinitions[0].image' --output text 2>/dev/null || true)"
+        if [ -n "$deployed_bootstrap" ] && [ "$deployed_bootstrap" != None ]; then
+          export BOOTSTRAP_IMAGE_URI="$deployed_bootstrap"
+        else
+          export SKIP_PREVIEW_SCHEMA_CLEANUP=true
+        fi
+        sh scripts/preview/destroy-pr.sh
