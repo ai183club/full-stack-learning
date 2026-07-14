@@ -11,6 +11,10 @@ on:
 
 permissions: { contents: read, id-token: write, pull-requests: read }
 
+concurrency:
+  group: pr-preview-${{ github.event.pull_request.number || inputs.pr_number }}
+  cancel-in-progress: false
+
 jobs:
   deploy:
     if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
@@ -35,7 +39,7 @@ jobs:
           set -euo pipefail
           show_build_failure() {
             build="$(aws codebuild batch-get-builds --ids "$id" --output json)"
-            printf '%s\n' "$build"
+            printf '%s\n' "$build" | jq '{builds:[.builds[] | {id,buildNumber,buildStatus,currentPhase,phases,logs:{groupName:.logs.groupName,streamName:.logs.streamName,deepLink:.logs.deepLink}}],buildsNotFound}'
             log_group="$(printf '%s' "$build" | jq -r '.builds[0].logs.groupName')"
             log_stream="$(printf '%s' "$build" | jq -r '.builds[0].logs.streamName')"
             aws logs get-log-events --log-group-name "$log_group" --log-stream-name "$log_stream" --start-from-head --query 'events[].message' --output text || true
@@ -53,7 +57,7 @@ jobs:
           set -euo pipefail
           show_build_failure() {
             build="$(aws codebuild batch-get-builds --ids "$id" --output json)"
-            printf '%s\n' "$build"
+            printf '%s\n' "$build" | jq '{builds:[.builds[] | {id,buildNumber,buildStatus,currentPhase,phases,logs:{groupName:.logs.groupName,streamName:.logs.streamName,deepLink:.logs.deepLink}}],buildsNotFound}'
             log_group="$(printf '%s' "$build" | jq -r '.builds[0].logs.groupName')"
             log_stream="$(printf '%s' "$build" | jq -r '.builds[0].logs.streamName')"
             aws logs get-log-events --log-group-name "$log_group" --log-stream-name "$log_stream" --start-from-head --query 'events[].message' --output text || true
@@ -80,5 +84,8 @@ jobs:
         run: |
           pnpm --filter web build
           npx --yes wrangler@4 pages deploy apps/web/out --project-name="$CLOUDFLARE_PAGES_PROJECT" --branch="${{ steps.preview.outputs.preview_branch }}"
+          PAGES_DOMAIN="$RECORD_NAME" PAGES_DOMAIN_ACTION=ensure sh scripts/preview/cloudflare-pages-domain.sh
           sh scripts/preview/cloudflare-dns.sh
           RECORD_NAME="${{ steps.preview.outputs.api_host }}" RECORD_TARGET="$(aws apigatewayv2 get-domain-name --domain-name '${{ steps.preview.outputs.api_host }}' --query 'DomainNameConfigurations[0].ApiGatewayDomainName' --output text)" sh scripts/preview/cloudflare-dns.sh
+          PAGES_DOMAIN="${{ steps.preview.outputs.web_host }}" PAGES_DOMAIN_ACTION=wait sh scripts/preview/cloudflare-pages-domain.sh
+          WEB_URL="https://${{ steps.preview.outputs.web_host }}" API_URL="https://${{ steps.preview.outputs.api_host }}" sh scripts/preview/smoke-pr.sh

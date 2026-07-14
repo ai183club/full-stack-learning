@@ -64,11 +64,23 @@ integration=$(aws apigatewayv2 get-integrations --region "$AWS_REGION" --api-id 
 lambda_arn=$(aws lambda get-function --region "$AWS_REGION" --function-name "$lambda_function" --query Configuration.FunctionArn --output text)
 if [ -z "$integration" ] || [ "$integration" = None ]; then integration=$(aws apigatewayv2 create-integration --region "$AWS_REGION" --api-id "$api_id" --integration-type AWS_PROXY --integration-uri "$lambda_arn" --payload-format-version 2.0 --query IntegrationId --output text); fi
 route=$(aws apigatewayv2 get-routes --region "$AWS_REGION" --api-id "$api_id" --query "Items[?RouteKey=='\$default'].RouteId|[0]" --output text); if [ -z "$route" ] || [ "$route" = None ]; then aws apigatewayv2 create-route --region "$AWS_REGION" --api-id "$api_id" --route-key '$default' --target "integrations/$integration" >/dev/null; fi
+stage=$(aws apigatewayv2 get-stages --region "$AWS_REGION" --api-id "$api_id" --query "Items[?StageName=='\$default'].StageName|[0]" --output text); if [ -z "$stage" ] || [ "$stage" = None ]; then aws apigatewayv2 create-stage --region "$AWS_REGION" --api-id "$api_id" --stage-name '$default' --auto-deploy >/dev/null; fi
 permission_policy=$(aws lambda get-policy --region "$AWS_REGION" --function-name "$lambda_function" --query Policy --output text 2>/dev/null || true)
 if ! printf '%s' "$permission_policy" | jq -e --arg sid "apigw-$api_id" '.Statement[]? | select(.Sid == $sid)' >/dev/null 2>&1; then
  aws lambda add-permission --region "$AWS_REGION" --function-name "$lambda_function" --statement-id "apigw-$api_id" --action lambda:InvokeFunction --principal apigateway.amazonaws.com --source-arn "arn:aws:execute-api:$AWS_REGION:$account_id:$api_id/*" >/dev/null
 fi
 domain=$(aws apigatewayv2 get-domain-names --region "$AWS_REGION" --query "Items[?DomainName=='$api_host'].DomainName|[0]" --output text); if [ -z "$domain" ] || [ "$domain" = None ]; then aws apigatewayv2 create-domain-name --region "$AWS_REGION" --domain-name "$api_host" --domain-name-configurations "CertificateArn=$PREVIEW_ACM_CERTIFICATE_ARN,EndpointType=REGIONAL,SecurityPolicy=TLS_1_2" >/dev/null; fi
+attempt=1
+while :; do
+ domain_status=$(aws apigatewayv2 get-domain-name --region "$AWS_REGION" --domain-name "$api_host" --query DomainNameConfigurations[0].DomainNameStatus --output text 2>/dev/null || true)
+ if [ "$domain_status" = AVAILABLE ]; then break; fi
+ if [ "$attempt" -ge 120 ]; then
+  echo "Timed out waiting for API Gateway domain: $api_host ($domain_status)" >&2
+  exit 1
+ fi
+ attempt=$((attempt + 1))
+ sleep 10
+done
 mapping=$(aws apigatewayv2 get-api-mappings --region "$AWS_REGION" --domain-name "$api_host" --query "Items[?ApiId=='$api_id'].ApiMappingId|[0]" --output text); if [ -z "$mapping" ] || [ "$mapping" = None ]; then aws apigatewayv2 create-api-mapping --region "$AWS_REGION" --domain-name "$api_host" --api-id "$api_id" --stage '$default' >/dev/null; fi
 target=$(aws apigatewayv2 get-domain-name --region "$AWS_REGION" --domain-name "$api_host" --query 'DomainNameConfigurations[0].ApiGatewayDomainName' --output text)
 printf 'api_host=%s\napi_gateway_target=%s\nlambda=%s\n' "$api_host" "$target" "$lambda_function"

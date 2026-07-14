@@ -33,7 +33,19 @@ if [ "${PREVIEW_CLEANUP:-false}" = "true" ]; then
   psql --no-password --set=ON_ERROR_STOP=1 --set="preview_schema=${schema}" --set="preview_role=${role}" <<'SQL'
 SELECT format('DROP SCHEMA IF EXISTS %I CASCADE', :'preview_schema')
 \gexec
-SELECT format('DROP ROLE IF EXISTS %I', :'preview_role')
+SELECT format('REVOKE CONNECT ON DATABASE %I FROM %I', current_database(), :'preview_role')
+WHERE EXISTS (
+    SELECT 1
+    FROM pg_roles
+    WHERE rolname = :'preview_role'
+)
+\gexec
+SELECT format('DROP ROLE %I', :'preview_role')
+WHERE EXISTS (
+    SELECT 1
+    FROM pg_roles
+    WHERE rolname = :'preview_role'
+)
 \gexec
 SQL
   printf '%s\n' "preview schema cleanup completed: schema=${schema}"
