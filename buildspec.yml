@@ -1,0 +1,72 @@
+version: 0.2
+
+env:
+  variables:
+    AWS_REGION: ap-northeast-1
+    AWS_ACCOUNT_ID: "017719539487"
+    ECR_REPOSITORY: profile-api
+    ECS_CLUSTER: profile-learning-cluster
+    ECS_SERVICE: profile-api-service
+    TASK_DEFINITION_FAMILY: profile-api
+    CONTAINER_NAME: profile-api
+
+phases:
+  pre_build:
+    commands:
+      - set -eu
+      - export IMAGE_TAG="${CODEBUILD_RESOLVED_SOURCE_VERSION:0:12}"
+      - export ECR_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}"
+      - aws ecr get-login-password --region "${AWS_REGION}" | docker login --username AWS --password-stdin "${ECR_URI}"
+  build:
+    commands:
+      - docker run --rm --workdir /src --volume "${CODEBUILD_SRC_DIR}/apps/api:/src" golang:1.26-alpine go test ./...
+      - docker build --platform linux/arm64 --tag "${ECR_URI}:${IMAGE_TAG}" apps/api
+  post_build:
+    commands:
+      - docker push "${ECR_URI}:${IMAGE_TAG}"
+      - |
+        IMAGE_DIGEST=""
+        for attempt in $(seq 1 10); do
+          IMAGE_DIGEST="$(aws ecr describe-images --repository-name "${ECR_REPOSITORY}" --image-ids imageTag="${IMAGE_TAG}" --query 'imageDetails[0].imageDigest' --output text --region "${AWS_REGION}")"
+          if [ "${IMAGE_DIGEST}" != "None" ] && [ -n "${IMAGE_DIGEST}" ]; then
+            break
+          fi
+          sleep 2
+        done
+        test "${IMAGE_DIGEST}" != "None"
+        test -n "${IMAGE_DIGEST}"
+        export IMAGE_URI="${ECR_URI}@${IMAGE_DIGEST}"
+      - aws ecs describe-task-definition --task-definition "${TASK_DEFINITION_FAMILY}" --query taskDefinition --output json --region "${AWS_REGION}" > task-definition-current.json
+      - |
+        IMAGE_URI="${IMAGE_URI}" python3 - <<'PY'
+        import json
+        import os
+
+        with open("task-definition-current.json", encoding="utf-8") as source:
+            definition = json.load(source)
+
+        for key in (
+            "taskDefinitionArn",
+            "revision",
+            "status",
+            "requiresAttributes",
+            "compatibilities",
+            "registeredAt",
+            "registeredBy",
+            "deregisteredAt",
+        ):
+            definition.pop(key, None)
+
+        for container in definition["containerDefinitions"]:
+            if container["name"] == os.environ["CONTAINER_NAME"]:
+                container["image"] = os.environ["IMAGE_URI"]
+                break
+        else:
+            raise SystemExit("profile-api container was not found in the task definition")
+
+        with open("task-definition-next.json", "w", encoding="utf-8") as destination:
+            json.dump(definition, destination)
+        PY
+      - export TASK_DEFINITION_ARN="$(aws ecs register-task-definition --cli-input-json file://task-definition-next.json --query 'taskDefinition.taskDefinitionArn' --output text --region "${AWS_REGION}")"
+      - aws ecs update-service --cluster "${ECS_CLUSTER}" --service "${ECS_SERVICE}" --task-definition "${TASK_DEFINITION_ARN}" --force-new-deployment --region "${AWS_REGION}" > /dev/null
+      - aws ecs wait services-stable --cluster "${ECS_CLUSTER}" --services "${ECS_SERVICE}" --region "${AWS_REGION}"

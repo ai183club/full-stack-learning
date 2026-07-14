@@ -1,0 +1,51 @@
+name: Deploy Lambda
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/lambda/**"
+      - "packages/config/**"
+      - "pnpm-lock.yaml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.9.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Test and package Lambda
+        run: |
+          pnpm --filter lambda test
+          pnpm --filter lambda build
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ap-northeast-1
+          role-to-assume: arn:aws:iam::017719539487:role/profile-github-actions-role
+
+      - name: Update Lambda code
+        run: |
+          aws lambda update-function-code \
+            --function-name profile-api-lambda \
+            --zip-file fileb://apps/lambda/dist/profile-api-lambda.zip \
+            --publish
+          aws lambda wait function-updated --function-name profile-api-lambda

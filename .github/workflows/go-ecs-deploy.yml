@@ -1,0 +1,51 @@
+name: Deploy Go API to ECS
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/api/**"
+      - "buildspec.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ap-northeast-1
+          role-to-assume: arn:aws:iam::017719539487:role/profile-github-actions-role
+
+      - name: Start CodeBuild deployment
+        id: build
+        shell: bash
+        run: |
+          set -euo pipefail
+          build_id="$(aws codebuild start-build \
+            --project-name profile-go-deploy \
+            --source-version "$GITHUB_SHA" \
+            --query 'build.id' \
+            --output text)"
+          echo "id=$build_id" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for CodeBuild
+        shell: bash
+        run: |
+          set -euo pipefail
+          while true; do
+            status="$(aws codebuild batch-get-builds \
+              --ids "${{ steps.build.outputs.id }}" \
+              --query 'builds[0].buildStatus' \
+              --output text)"
+            case "$status" in
+              SUCCEEDED) exit 0 ;;
+              FAILED|FAULT|STOPPED|TIMED_OUT) echo "CodeBuild finished with $status" >&2; exit 1 ;;
+              *) sleep 10 ;;
+            esac
+          done
