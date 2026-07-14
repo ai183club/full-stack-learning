@@ -7,7 +7,7 @@ const generateBio = createOpenRouterBioGenerator({
 	fetch: globalThis.fetch,
 	getApiKey: () => process.env.OPENROUTER_API_KEY,
 	getModel: () => process.env.OPENROUTER_MODEL,
-	requestTimeoutMs: 20_000,
+	requestTimeoutMs: 28_000,
 	retryDelayMs: 400,
 });
 

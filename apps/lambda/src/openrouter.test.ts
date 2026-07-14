@@ -6,7 +6,7 @@ import {
 	createOpenRouterBioGenerator,
 } from "./openrouter.js";
 
-test("calls OpenRouter with Gemma, reasoning, and a server-side bearer token", async () => {
+test("calls OpenRouter with Gemma, enabled reasoning, and a server-side bearer token", async () => {
 	let request: RequestInit | undefined;
 	const generateBio = createOpenRouterBioGenerator({
 		fetch: async (input, init) => {
@@ -37,12 +37,8 @@ test("calls OpenRouter with Gemma, reasoning, and a server-side bearer token", a
 		"Content-Type": "application/json",
 	});
 	assert.equal(body.model, "google/gemma-4-31b-it:free");
-	assert.equal(body.max_tokens, 220);
-	assert.deepEqual(body.reasoning, {
-		enabled: true,
-		max_tokens: 64,
-		exclude: true,
-	});
+	assert.deepEqual(body.reasoning, { enabled: true });
+	assert.equal("max_tokens" in body, false);
 	assert.equal(body.messages[1].content.includes("Alice"), true);
 	assert.equal(body.messages[0].content.includes("简体中文"), true);
 	assert.equal(body.messages[1].content.includes("中文个人简介"), true);

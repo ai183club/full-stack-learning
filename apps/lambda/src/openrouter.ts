@@ -113,11 +113,10 @@ function createRequest(
 				},
 				{
 					role: "user",
-					content: `请为名为 ${JSON.stringify(name)} 的人撰写一段温暖、自然且适合公开展示的中文个人简介。可以根据名字营造克制的表达风格，但不要虚构年龄、性别、职业、学历、雇主、所在地、具体成就或其他敏感事实。`,
+					content: `请为名为 ${JSON.stringify(name)} 的人撰写一段温暖、自然且适合公开展示的中文个人简介。可以根据名字营造克制的表达风格，但不要虚构年龄、性别、职业、学历、雇主、所在地、具体成就或其他敏感事实。最终只输出简介正文，并在输出前确认全文不超过500个Unicode字符。`,
 				},
 			],
-			max_tokens: 220,
-			reasoning: { enabled: true, max_tokens: 64, exclude: true },
+			reasoning: { enabled: true },
 		}),
 	};
 }

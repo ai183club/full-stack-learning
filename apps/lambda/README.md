@@ -41,7 +41,7 @@ OPENROUTER_MODEL=google/gemma-4-31b-it:free
 
 `OPENROUTER_MODEL`可省略，以上模型是代码默认值。API Key不得写入Web环境变量、Git仓库或请求日志。由于模型请求超时为20秒，部署时Lambda Function timeout至少配置为30秒。
 
-为降低免费模型Provider波动带来的失败率，Lambda将总输出限制为220 tokens、reasoning限制为64 tokens且不返回reasoning details。仅当OpenRouter返回429、502、503或504时，在同一个20秒总超时内进行一次受控重试；401等配置或客户端错误不会重试。
+Lambda启用模型推理，但不额外传递输出或推理 token 预算、也不要求上游隐藏 reasoning；这样与已验证的 OpenRouter 请求保持一致。Bio 长度由提示词、Lambda 和 Go 的500个 Unicode 字符校验共同保证。仅当OpenRouter返回429、502、503或504时，在同一个20秒总超时内进行一次受控重试；401等配置或客户端错误不会重试。
 
 当前Prompt要求模型只返回自然、流畅的简体中文Bio，并禁止虚构年龄、性别、职业、学历、雇主、所在地、具体成就或其他敏感事实。该规则只影响首次生成；数据库中已存在的Bio不会重新生成。
 
@@ -63,7 +63,7 @@ pnpm --filter lambda deploy:manual
 - 请求体最多 `16 KiB`。
 - `bio` 非必填，最多 `500` 个 Unicode 字符。
 - PATCH 必须包含 `Authorization`；Lambda 只转发认证头，真实验密仍由 Go 完成。
-- Go上游请求超时为5秒，OpenRouter请求超时为20秒；超时映射为HTTP 504，其他上游网络错误映射为502。
+- Go上游请求超时为5秒，OpenRouter请求超时为28秒；为API Gateway HTTP API的30秒同步集成上限预留余量。超时映射为HTTP 504，其他上游网络错误映射为502。
 - 日志只记录安全的路径和超时状态，不记录请求正文、密码或 Authorization。
 - Lambda 不读取数据库 Secret，不连接 RDS。
 - OpenRouter的 `reasoning_details`不会返回给Web或写入数据库，只提取最终assistant文本作为Bio。
