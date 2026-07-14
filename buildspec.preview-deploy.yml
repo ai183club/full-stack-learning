@@ -16,4 +16,20 @@ phases:
       - pnpm --filter lambda build
   build:
     commands:
-      - LAMBDA_ZIP_FILE=apps/lambda/dist/profile-api-lambda.zip sh scripts/preview/deploy-go-pr.sh
+      - |
+        set -eu
+        ECR_URI="017719539487.dkr.ecr.${AWS_REGION}.amazonaws.com/profile-api"
+        BOOTSTRAP_IMAGE_TAG="preview-bootstrap-$(printf '%s' "$GIT_SHA" | cut -c1-12)"
+        bootstrap_digest="$(aws ecr describe-images --region "$AWS_REGION" --repository-name profile-api --image-ids "imageTag=$BOOTSTRAP_IMAGE_TAG" --query 'imageDetails[0].imageDigest' --output text 2>/dev/null || true)"
+        if [ -z "$bootstrap_digest" ] || [ "$bootstrap_digest" = None ]; then
+          aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$ECR_URI"
+          docker build --platform linux/arm64 --file apps/db-bootstrap/Dockerfile.preview --build-arg "BOOTSTRAP_BASE_IMAGE=$BOOTSTRAP_IMAGE_URI" --tag "$ECR_URI:$BOOTSTRAP_IMAGE_TAG" apps/db-bootstrap
+          docker push "$ECR_URI:$BOOTSTRAP_IMAGE_TAG"
+          for attempt in $(seq 1 10); do
+            bootstrap_digest="$(aws ecr describe-images --region "$AWS_REGION" --repository-name profile-api --image-ids "imageTag=$BOOTSTRAP_IMAGE_TAG" --query 'imageDetails[0].imageDigest' --output text 2>/dev/null || true)"
+            if [ -n "$bootstrap_digest" ] && [ "$bootstrap_digest" != None ]; then break; fi
+            sleep 2
+          done
+        fi
+        test -n "$bootstrap_digest" && test "$bootstrap_digest" != None
+        BOOTSTRAP_IMAGE_URI="$ECR_URI@$bootstrap_digest" LAMBDA_ZIP_FILE=apps/lambda/dist/profile-api-lambda.zip sh scripts/preview/deploy-go-pr.sh

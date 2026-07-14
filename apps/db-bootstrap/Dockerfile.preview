@@ -1,0 +1,4 @@
+ARG BOOTSTRAP_BASE_IMAGE
+FROM ${BOOTSTRAP_BASE_IMAGE}
+
+COPY --chmod=0555 preview-schema.sh /usr/local/bin/preview-schema.sh

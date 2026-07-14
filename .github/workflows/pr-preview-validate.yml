@@ -33,8 +33,15 @@ jobs:
           SOURCE_SHA: ${{ github.event.pull_request.head.sha || inputs.git_sha }}
         run: |
           set -euo pipefail
+          show_build_failure() {
+            build="$(aws codebuild batch-get-builds --ids "$id" --output json)"
+            printf '%s\n' "$build"
+            log_group="$(printf '%s' "$build" | jq -r '.builds[0].logs.groupName')"
+            log_stream="$(printf '%s' "$build" | jq -r '.builds[0].logs.streamName')"
+            aws logs get-log-events --log-group-name "$log_group" --log-stream-name "$log_stream" --start-from-head --query 'events[].message' --output text || true
+          }
           id="$(aws codebuild start-build --project-name profile-preview-deploy --source-version "$SOURCE_SHA" --environment-variables-override "name=PR_NUMBER,value=$PR_NUMBER,type=PLAINTEXT" --query 'build.id' --output text)"
-          while :; do status="$(aws codebuild batch-get-builds --ids "$id" --query 'builds[0].buildStatus' --output text)"; case "$status" in SUCCEEDED) break;; FAILED|FAULT|STOPPED|TIMED_OUT) aws codebuild batch-get-builds --ids "$id" --output json; exit 1;; *) sleep 10;; esac; done
+          while :; do status="$(aws codebuild batch-get-builds --ids "$id" --query 'builds[0].buildStatus' --output text)"; case "$status" in SUCCEEDED) break;; FAILED|FAULT|STOPPED|TIMED_OUT) show_build_failure; exit 1;; *) sleep 10;; esac; done
           digest="$(aws ecr describe-images --repository-name profile-api --image-ids imageTag=${{ steps.preview.outputs.image_tag }} --query 'imageDetails[0].imageDigest' --output text)"
           echo "image_uri=017719539487.dkr.ecr.ap-northeast-1.amazonaws.com/profile-api@$digest" >> "$GITHUB_OUTPUT"
       - name: Create or update AWS preview resources in CodeBuild
@@ -44,8 +51,15 @@ jobs:
           IMAGE_URI: ${{ steps.image.outputs.image_uri }}
         run: |
           set -euo pipefail
+          show_build_failure() {
+            build="$(aws codebuild batch-get-builds --ids "$id" --output json)"
+            printf '%s\n' "$build"
+            log_group="$(printf '%s' "$build" | jq -r '.builds[0].logs.groupName')"
+            log_stream="$(printf '%s' "$build" | jq -r '.builds[0].logs.streamName')"
+            aws logs get-log-events --log-group-name "$log_group" --log-stream-name "$log_stream" --start-from-head --query 'events[].message' --output text || true
+          }
           id="$(aws codebuild start-build --project-name profile-preview-deploy --source-version "$GIT_SHA" --buildspec-override buildspec.preview-deploy.yml --environment-variables-override "name=PR_NUMBER,value=$PR_NUMBER,type=PLAINTEXT" "name=GIT_SHA,value=$GIT_SHA,type=PLAINTEXT" "name=IMAGE_URI,value=$IMAGE_URI,type=PLAINTEXT" --query 'build.id' --output text)"
-          while :; do status="$(aws codebuild batch-get-builds --ids "$id" --query 'builds[0].buildStatus' --output text)"; case "$status" in SUCCEEDED) break;; FAILED|FAULT|STOPPED|TIMED_OUT) exit 1;; *) sleep 10;; esac; done
+          while :; do status="$(aws codebuild batch-get-builds --ids "$id" --query 'builds[0].buildStatus' --output text)"; case "$status" in SUCCEEDED) break;; FAILED|FAULT|STOPPED|TIMED_OUT) show_build_failure; exit 1;; *) sleep 10;; esac; done
       - uses: pnpm/action-setup@v4
         with:
           version: 11.9.0
