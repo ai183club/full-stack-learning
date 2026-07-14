@@ -7,6 +7,9 @@ env:
     ECR_REPOSITORY: profile-api
 
 phases:
+  install:
+    runtime-versions:
+      golang: 1.26
   pre_build:
     commands:
       - set -eu
@@ -26,8 +29,10 @@ phases:
       - aws ecr get-login-password --region "${AWS_REGION}" | docker login --username AWS --password-stdin "${ECR_URI}"
   build:
     commands:
-      - docker run --rm --workdir /src --volume "${CODEBUILD_SRC_DIR}/apps/api:/src" golang:1.26-alpine go test ./...
-      - docker build --platform linux/arm64 --tag "${ECR_URI}:${IMAGE_TAG}" apps/api
+      - go test -C apps/api ./...
+      - CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -C apps/api -trimpath -ldflags="-s -w" -o profile-api ./cmd/server
+      - curl --fail --show-error --silent --location https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem --output apps/api/global-bundle.pem
+      - docker build --platform linux/arm64 --file apps/api/Dockerfile.preview --tag "${ECR_URI}:${IMAGE_TAG}" apps/api
   post_build:
     commands:
       - docker push "${ECR_URI}:${IMAGE_TAG}"

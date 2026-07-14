@@ -1,0 +1,11 @@
+FROM scratch
+
+COPY --chown=10001:10001 profile-api /app/profile-api
+COPY --chown=10001:10001 global-bundle.pem /app/certs/global-bundle.pem
+
+USER 10001:10001
+WORKDIR /app
+
+EXPOSE 8080
+
+CMD ["/app/profile-api"]
