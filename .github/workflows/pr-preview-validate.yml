@@ -96,4 +96,4 @@ jobs:
           # does not proxy the origin handshake with the execute-api hostname.
           RECORD_NAME="${{ steps.preview.outputs.api_host }}" RECORD_TARGET="$api_target" RECORD_PROXIED=false sh scripts/preview/cloudflare-dns.sh
           PAGES_DOMAIN="${{ steps.preview.outputs.web_host }}" PAGES_DOMAIN_ACTION=wait sh scripts/preview/cloudflare-pages-domain.sh
-          WEB_URL="https://${{ steps.preview.outputs.web_host }}" API_URL="https://${{ steps.preview.outputs.api_host }}" sh scripts/preview/smoke-pr.sh
+          WEB_URL="https://${{ steps.preview.outputs.web_host }}" API_URL="https://${{ steps.preview.outputs.api_host }}" API_CONNECT_TARGET="$api_target" sh scripts/preview/smoke-pr.sh
