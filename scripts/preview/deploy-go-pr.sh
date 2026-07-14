@@ -10,6 +10,7 @@ set -eu
 : "${APP_SUBNETS:?}"; : "${PREVIEW_ECS_SECURITY_GROUP:?}"; : "${LAMBDA_SUBNETS:?}"; : "${LAMBDA_SECURITY_GROUP:?}"
 : "${PREVIEW_ACM_CERTIFICATE_ARN:?}"; : "${OPENROUTER_API_KEY:?}"; : "${LAMBDA_ZIP_FILE:?}"
 AWS_REGION=${AWS_REGION:-ap-northeast-1}; ECS_CLUSTER=${ECS_CLUSTER:-profile-learning-cluster}
+account_id=$(aws sts get-caller-identity --query Account --output text)
 eval "$(PR_NUMBER=$PR_NUMBER GIT_SHA=$GIT_SHA sh scripts/preview/pr-context.sh)"
 tag_map="Project=profile-learning,Environment=pr-$pr_number,ManagedBy=github-actions"
 secret_tags="Key=Project,Value=profile-learning Key=Environment,Value=pr-$pr_number Key=ManagedBy,Value=github-actions"
@@ -65,7 +66,7 @@ if [ -z "$integration" ] || [ "$integration" = None ]; then integration=$(aws ap
 route=$(aws apigatewayv2 get-routes --region "$AWS_REGION" --api-id "$api_id" --query "Items[?RouteKey=='\$default'].RouteId|[0]" --output text); if [ -z "$route" ] || [ "$route" = None ]; then aws apigatewayv2 create-route --region "$AWS_REGION" --api-id "$api_id" --route-key '$default' --target "integrations/$integration" >/dev/null; fi
 permission_policy=$(aws lambda get-policy --region "$AWS_REGION" --function-name "$lambda_function" --query Policy --output text 2>/dev/null || true)
 if ! printf '%s' "$permission_policy" | jq -e --arg sid "apigw-$api_id" '.Statement[]? | select(.Sid == $sid)' >/dev/null 2>&1; then
- aws lambda add-permission --region "$AWS_REGION" --function-name "$lambda_function" --statement-id "apigw-$api_id" --action lambda:InvokeFunction --principal apigateway.amazonaws.com --source-arn "arn:aws:execute-api:$AWS_REGION:*:$api_id/*" >/dev/null
+ aws lambda add-permission --region "$AWS_REGION" --function-name "$lambda_function" --statement-id "apigw-$api_id" --action lambda:InvokeFunction --principal apigateway.amazonaws.com --source-arn "arn:aws:execute-api:$AWS_REGION:$account_id:$api_id/*" >/dev/null
 fi
 domain=$(aws apigatewayv2 get-domain-names --region "$AWS_REGION" --query "Items[?DomainName=='$api_host'].DomainName|[0]" --output text); if [ -z "$domain" ] || [ "$domain" = None ]; then aws apigatewayv2 create-domain-name --region "$AWS_REGION" --domain-name "$api_host" --domain-name-configurations "CertificateArn=$PREVIEW_ACM_CERTIFICATE_ARN,EndpointType=REGIONAL,SecurityPolicy=TLS_1_2" --tags "$tag_map" >/dev/null; fi
 mapping=$(aws apigatewayv2 get-api-mappings --region "$AWS_REGION" --domain-name "$api_host" --query "Items[?ApiId=='$api_id'].ApiMappingId|[0]" --output text); if [ -z "$mapping" ] || [ "$mapping" = None ]; then aws apigatewayv2 create-api-mapping --region "$AWS_REGION" --domain-name "$api_host" --api-id "$api_id" --stage '$default' >/dev/null; fi
