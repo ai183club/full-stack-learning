@@ -66,13 +66,22 @@ WHERE NOT EXISTS (
 )
 \gexec
 
-SELECT format('ALTER ROLE %I LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE PASSWORD %L', :'preview_role', :'preview_password')
+SELECT format('ALTER ROLE %I LOGIN NOINHERIT NOCREATEDB NOCREATEROLE PASSWORD %L', :'preview_role', :'preview_password')
 \gexec
 
-SELECT format('CREATE SCHEMA IF NOT EXISTS %I AUTHORIZATION %I', :'preview_schema', :'preview_role')
+SELECT format('GRANT CONNECT ON DATABASE %I TO %I', current_database(), :'preview_role')
+\gexec
+
+SELECT format('CREATE SCHEMA IF NOT EXISTS %I', :'preview_schema')
 \gexec
 
 SELECT format('REVOKE ALL PRIVILEGES ON SCHEMA %I FROM PUBLIC', :'preview_schema')
+\gexec
+
+SELECT format('REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA %I FROM PUBLIC', :'preview_schema')
+\gexec
+
+SELECT format('REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA %I FROM PUBLIC', :'preview_schema')
 \gexec
 
 SELECT format('GRANT USAGE ON SCHEMA %I TO %I', :'preview_schema', :'preview_role')
@@ -92,7 +101,10 @@ SELECT format(
 )
 \gexec
 
-SELECT format('ALTER TABLE %I.profiles OWNER TO %I', :'preview_schema', :'preview_role')
+SELECT format('GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE %I.profiles TO %I', :'preview_schema', :'preview_role')
+\gexec
+
+SELECT format('GRANT USAGE, SELECT ON SEQUENCE %I.profiles_id_seq TO %I', :'preview_schema', :'preview_role')
 \gexec
 
 SELECT format('ALTER ROLE %I SET search_path TO %I', :'preview_role', :'preview_schema')
