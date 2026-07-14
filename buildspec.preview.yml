@@ -35,16 +35,18 @@ phases:
       - docker build --platform linux/arm64 --file apps/api/Dockerfile.preview --tag "${ECR_URI}:${IMAGE_TAG}" apps/api
   post_build:
     commands:
-      - docker push "${ECR_URI}:${IMAGE_TAG}"
       - |
-        IMAGE_DIGEST=""
-        for attempt in $(seq 1 10); do
-          IMAGE_DIGEST="$(aws ecr describe-images --repository-name "${ECR_REPOSITORY}" --image-ids imageTag="${IMAGE_TAG}" --query 'imageDetails[0].imageDigest' --output text --region "${AWS_REGION}")"
-          if [ "${IMAGE_DIGEST}" != "None" ] && [ -n "${IMAGE_DIGEST}" ]; then
-            break
-          fi
-          sleep 2
-        done
+        IMAGE_DIGEST="$(aws ecr describe-images --repository-name "${ECR_REPOSITORY}" --image-ids imageTag="${IMAGE_TAG}" --query 'imageDetails[0].imageDigest' --output text --region "${AWS_REGION}" 2>/dev/null || true)"
+        if [ "${IMAGE_DIGEST}" = "None" ] || [ -z "${IMAGE_DIGEST}" ]; then
+          docker push "${ECR_URI}:${IMAGE_TAG}"
+          for attempt in $(seq 1 10); do
+            IMAGE_DIGEST="$(aws ecr describe-images --repository-name "${ECR_REPOSITORY}" --image-ids imageTag="${IMAGE_TAG}" --query 'imageDetails[0].imageDigest' --output text --region "${AWS_REGION}")"
+            if [ "${IMAGE_DIGEST}" != "None" ] && [ -n "${IMAGE_DIGEST}" ]; then
+              break
+            fi
+            sleep 2
+          done
+        fi
         test "${IMAGE_DIGEST}" != "None"
         test -n "${IMAGE_DIGEST}"
         printf '%s\n' "${ECR_URI}@${IMAGE_DIGEST}" > preview-image-uri.txt
