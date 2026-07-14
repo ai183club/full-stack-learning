@@ -29,6 +29,17 @@ role="profile_pr_${PR_NUMBER}"
 
 printf '%s\n' "preview schema bootstrap started: schema=${schema}, role=${role}"
 
+if [ "${PREVIEW_CLEANUP:-false}" = "true" ]; then
+  psql --no-password --set=ON_ERROR_STOP=1 --set="preview_schema=${schema}" --set="preview_role=${role}" <<'SQL'
+SELECT format('DROP SCHEMA IF EXISTS %I CASCADE', :'preview_schema')
+\gexec
+SELECT format('DROP ROLE IF EXISTS %I', :'preview_role')
+\gexec
+SQL
+  printf '%s\n' "preview schema cleanup completed: schema=${schema}"
+  exit 0
+fi
+
 psql --no-password --set=ON_ERROR_STOP=1 \
   --set="preview_schema=${schema}" \
   --set="preview_role=${role}" \

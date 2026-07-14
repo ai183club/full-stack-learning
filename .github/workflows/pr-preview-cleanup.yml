@@ -1,0 +1,31 @@
+name: Destroy PR Preview
+on:
+  pull_request:
+    types: [closed]
+permissions: { contents: read, id-token: write }
+jobs:
+  cleanup:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    environment: preview
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ap-northeast-1
+          role-to-assume: ${{ secrets.AWS_PREVIEW_ROLE_ARN }}
+      - name: Destroy AWS resources in CodeBuild
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GIT_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          id="$(aws codebuild start-build --project-name profile-preview-deploy --source-version "$GIT_SHA" --buildspec-override buildspec.preview-cleanup.yml --environment-variables-override "name=PR_NUMBER,value=$PR_NUMBER,type=PLAINTEXT" "name=GIT_SHA,value=$GIT_SHA,type=PLAINTEXT" --query 'build.id' --output text)"
+          while :; do status="$(aws codebuild batch-get-builds --ids "$id" --query 'builds[0].buildStatus' --output text)"; case "$status" in SUCCEEDED) break;; FAILED|FAULT|STOPPED|TIMED_OUT) exit 1;; *) sleep 10;; esac; done
+      - name: Remove exact preview DNS records
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          RECORD_NAME="pr-$PR_NUMBER.preview.seebyte.xyz" sh scripts/preview/cloudflare-delete-dns.sh
+          RECORD_NAME="api-pr-$PR_NUMBER.preview.seebyte.xyz" sh scripts/preview/cloudflare-delete-dns.sh

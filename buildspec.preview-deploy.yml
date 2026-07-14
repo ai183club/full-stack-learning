@@ -1,0 +1,19 @@
+version: 0.2
+env:
+  variables:
+    AWS_REGION: ap-northeast-1
+phases:
+  install:
+    runtime-versions:
+      nodejs: 22
+  pre_build:
+    commands:
+      - set -eu
+      - ': "${PR_NUMBER:?}"; : "${GIT_SHA:?}"; : "${IMAGE_URI:?}"'
+      - corepack enable
+      - pnpm install --frozen-lockfile
+      - pnpm --filter lambda test
+      - pnpm --filter lambda build
+  build:
+    commands:
+      - LAMBDA_ZIP_FILE=apps/lambda/dist/profile-api-lambda.zip sh scripts/preview/deploy-go-pr.sh
