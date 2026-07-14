@@ -1,4 +1,7 @@
-FROM golang:1.26-alpine AS build
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS build
+
+ARG TARGETOS
+ARG TARGETARCH
 
 WORKDIR /src
 
@@ -8,20 +11,15 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/profile-api ./cmd/server
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/profile-api ./cmd/server
 RUN wget -q -O /out/global-bundle.pem https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem
 
 FROM alpine:3.22
 
-RUN apk add --no-cache ca-certificates \
-	&& addgroup -S app \
-	&& adduser -S -G app app \
-	&& mkdir -p /app/certs
+COPY --from=build --chown=10001:10001 /out/profile-api /app/profile-api
+COPY --from=build --chown=10001:10001 /out/global-bundle.pem /app/certs/global-bundle.pem
 
-COPY --from=build --chown=app:app /out/profile-api /app/profile-api
-COPY --from=build --chown=app:app /out/global-bundle.pem /app/certs/global-bundle.pem
-
-USER app
+USER 10001:10001
 WORKDIR /app
 
 EXPOSE 8080
