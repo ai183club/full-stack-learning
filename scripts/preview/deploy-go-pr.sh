@@ -59,7 +59,7 @@ else
 fi
 aws lambda wait function-updated --region "$AWS_REGION" --function-name "$lambda_function"
 api_id=$(aws apigatewayv2 get-apis --region "$AWS_REGION" --query "Items[?Name=='$api_gateway_name'].ApiId|[0]" --output text)
-if [ -z "$api_id" ] || [ "$api_id" = None ]; then api_id=$(aws apigatewayv2 create-api --region "$AWS_REGION" --name "$api_gateway_name" --protocol-type HTTP --cors-configuration "AllowOrigins=https://$web_host,AllowMethods=GET,POST,PATCH,OPTIONS,AllowHeaders=content-type,authorization" --tags "$tag_map" --query ApiId --output text); fi
+if [ -z "$api_id" ] || [ "$api_id" = None ]; then api_id=$(aws apigatewayv2 create-api --region "$AWS_REGION" --name "$api_gateway_name" --protocol-type HTTP --cors-configuration "AllowOrigins=https://$web_host,AllowMethods=GET,POST,PATCH,OPTIONS,AllowHeaders=content-type,authorization" --query ApiId --output text); fi
 integration=$(aws apigatewayv2 get-integrations --region "$AWS_REGION" --api-id "$api_id" --query "Items[?IntegrationUri==\`$(aws lambda get-function --region "$AWS_REGION" --function-name "$lambda_function" --query Configuration.FunctionArn --output text)\`].IntegrationId|[0]" --output text)
 lambda_arn=$(aws lambda get-function --region "$AWS_REGION" --function-name "$lambda_function" --query Configuration.FunctionArn --output text)
 if [ -z "$integration" ] || [ "$integration" = None ]; then integration=$(aws apigatewayv2 create-integration --region "$AWS_REGION" --api-id "$api_id" --integration-type AWS_PROXY --integration-uri "$lambda_arn" --payload-format-version 2.0 --query IntegrationId --output text); fi
@@ -68,7 +68,7 @@ permission_policy=$(aws lambda get-policy --region "$AWS_REGION" --function-name
 if ! printf '%s' "$permission_policy" | jq -e --arg sid "apigw-$api_id" '.Statement[]? | select(.Sid == $sid)' >/dev/null 2>&1; then
  aws lambda add-permission --region "$AWS_REGION" --function-name "$lambda_function" --statement-id "apigw-$api_id" --action lambda:InvokeFunction --principal apigateway.amazonaws.com --source-arn "arn:aws:execute-api:$AWS_REGION:$account_id:$api_id/*" >/dev/null
 fi
-domain=$(aws apigatewayv2 get-domain-names --region "$AWS_REGION" --query "Items[?DomainName=='$api_host'].DomainName|[0]" --output text); if [ -z "$domain" ] || [ "$domain" = None ]; then aws apigatewayv2 create-domain-name --region "$AWS_REGION" --domain-name "$api_host" --domain-name-configurations "CertificateArn=$PREVIEW_ACM_CERTIFICATE_ARN,EndpointType=REGIONAL,SecurityPolicy=TLS_1_2" --tags "$tag_map" >/dev/null; fi
+domain=$(aws apigatewayv2 get-domain-names --region "$AWS_REGION" --query "Items[?DomainName=='$api_host'].DomainName|[0]" --output text); if [ -z "$domain" ] || [ "$domain" = None ]; then aws apigatewayv2 create-domain-name --region "$AWS_REGION" --domain-name "$api_host" --domain-name-configurations "CertificateArn=$PREVIEW_ACM_CERTIFICATE_ARN,EndpointType=REGIONAL,SecurityPolicy=TLS_1_2" >/dev/null; fi
 mapping=$(aws apigatewayv2 get-api-mappings --region "$AWS_REGION" --domain-name "$api_host" --query "Items[?ApiId=='$api_id'].ApiMappingId|[0]" --output text); if [ -z "$mapping" ] || [ "$mapping" = None ]; then aws apigatewayv2 create-api-mapping --region "$AWS_REGION" --domain-name "$api_host" --api-id "$api_id" --stage '$default' >/dev/null; fi
 target=$(aws apigatewayv2 get-domain-name --region "$AWS_REGION" --domain-name "$api_host" --query 'DomainNameConfigurations[0].ApiGatewayDomainName' --output text)
 printf 'api_host=%s\napi_gateway_target=%s\nlambda=%s\n' "$api_host" "$target" "$lambda_function"
