@@ -86,6 +86,11 @@ jobs:
           npx --yes wrangler@4 pages deploy apps/web/out --project-name="$CLOUDFLARE_PAGES_PROJECT" --branch="${{ steps.preview.outputs.preview_branch }}"
           PAGES_DOMAIN="$RECORD_NAME" PAGES_DOMAIN_ACTION=ensure sh scripts/preview/cloudflare-pages-domain.sh
           sh scripts/preview/cloudflare-dns.sh
-          RECORD_NAME="${{ steps.preview.outputs.api_host }}" RECORD_TARGET="$(aws apigatewayv2 get-domain-name --domain-name '${{ steps.preview.outputs.api_host }}' --query 'DomainNameConfigurations[0].ApiGatewayDomainName' --output text)" sh scripts/preview/cloudflare-dns.sh
+          api_target="$(aws apigatewayv2 get-domain-name --domain-name '${{ steps.preview.outputs.api_host }}' --query 'DomainNameConfigurations[0].ApiGatewayDomainName' --output text)"
+          if [ -z "$api_target" ] || [ "$api_target" = None ]; then
+            echo 'API Gateway custom domain target was not returned' >&2
+            exit 1
+          fi
+          RECORD_NAME="${{ steps.preview.outputs.api_host }}" RECORD_TARGET="$api_target" sh scripts/preview/cloudflare-dns.sh
           PAGES_DOMAIN="${{ steps.preview.outputs.web_host }}" PAGES_DOMAIN_ACTION=wait sh scripts/preview/cloudflare-pages-domain.sh
           WEB_URL="https://${{ steps.preview.outputs.web_host }}" API_URL="https://${{ steps.preview.outputs.api_host }}" sh scripts/preview/smoke-pr.sh
