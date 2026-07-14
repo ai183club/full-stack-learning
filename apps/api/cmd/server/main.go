@@ -39,7 +39,7 @@ func main() {
 	handler := httpapi.NewHandler(profileService, profileService, profileService, profileService, pool)
 	server := &http.Server{
 		Addr:              ":" + cfg.HTTPPort,
-		Handler:           handler.Routes(),
+		Handler:           httpapi.WithCORS(handler.Routes(), cfg.CORSAllowedOrigins),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      10 * time.Second,

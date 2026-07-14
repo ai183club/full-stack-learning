@@ -1,0 +1,90 @@
+name: Validate PR Preview Contract
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+    paths:
+      - "apps/api/**"
+      - "apps/lambda/**"
+      - "apps/web/**"
+      - "apps/db-bootstrap/**"
+      - "buildspec.yml"
+      - "pnpm-lock.yaml"
+      - "package.json"
+      - "turbo.json"
+      - "scripts/preview/**"
+      - ".github/workflows/pr-preview-validate.yml"
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "Existing GitHub PR number"
+        required: true
+        type: string
+      git_sha:
+        description: "Commit SHA to validate"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  classify:
+    runs-on: ubuntu-latest
+    outputs:
+      api_or_web_changed: ${{ github.event_name == 'workflow_dispatch' && 'true' || steps.changes.outputs.api_or_web }}
+      lambda_changed: ${{ github.event_name == 'workflow_dispatch' && 'true' || steps.changes.outputs.lambda }}
+    steps:
+      - uses: dorny/paths-filter@v3
+        id: changes
+        if: github.event_name == 'pull_request'
+        with:
+          filters: |
+            api_or_web:
+              - 'apps/api/**'
+              - 'apps/web/**'
+              - 'apps/db-bootstrap/**'
+              - 'buildspec.yml'
+              - 'pnpm-lock.yaml'
+              - 'package.json'
+              - 'turbo.json'
+            lambda:
+              - 'apps/lambda/**'
+              - 'pnpm-lock.yaml'
+              - 'package.json'
+
+  validate:
+    needs: classify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Derive safe preview resource names
+        id: preview
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
+          GIT_SHA: ${{ github.event.pull_request.head.sha || inputs.git_sha }}
+        run: sh scripts/preview/pr-context.sh
+
+      - name: Report preview contract
+        env:
+          API_OR_WEB_CHANGED: ${{ needs.classify.outputs.api_or_web_changed }}
+          LAMBDA_CHANGED: ${{ needs.classify.outputs.lambda_changed }}
+          DATABASE_SCHEMA: ${{ steps.preview.outputs.schema }}
+          ECS_SERVICE: ${{ steps.preview.outputs.ecs_service }}
+          TARGET_GROUP: ${{ steps.preview.outputs.target_group }}
+          WEB_HOST: ${{ steps.preview.outputs.web_host }}
+          API_HOST: ${{ steps.preview.outputs.api_host }}
+        run: |
+          {
+            echo "## PR Preview contract"
+            echo
+            echo "- API/Web preview required: \`${API_OR_WEB_CHANGED}\`"
+            echo "- Lambda-only validation required: \`${LAMBDA_CHANGED}\`"
+            echo "- Schema: \`${DATABASE_SCHEMA}\`"
+            echo "- ECS service: \`${ECS_SERVICE}\`"
+            echo "- Target group: \`${TARGET_GROUP}\`"
+            echo "- Web: \`https://${WEB_HOST}\`"
+            echo "- API: \`https://${API_HOST}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -6,9 +6,10 @@ RUN apk add --no-cache curl ca-certificates \
       --output /usr/local/share/ca-certificates/rds-global-bundle.pem \
     && chmod 0644 /usr/local/share/ca-certificates/rds-global-bundle.pem
 
-COPY bootstrap.sh /usr/local/bin/profile-db-bootstrap
+COPY bootstrap.sh preview-schema.sh /usr/local/bin/
 
-RUN chmod 0555 /usr/local/bin/profile-db-bootstrap
+RUN chmod 0555 /usr/local/bin/bootstrap.sh /usr/local/bin/preview-schema.sh \
+    && ln -s /usr/local/bin/bootstrap.sh /usr/local/bin/profile-db-bootstrap
 
 USER postgres
 

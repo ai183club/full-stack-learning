@@ -6,6 +6,8 @@
 - 创建 `profiles`表；
 - 授予应用角色对该表和其 ID sequence所需的最小 CRUD权限。
 
+它还会撤销 PostgreSQL 默认 `PUBLIC` 对 `public` Schema、其中表及 sequence的权限，再仅向 `profile_app`显式授予所需权限。这是 PR Preview 独立数据库角色不能访问生产 `public` Schema 的前置条件。
+
 容器从环境变量接收 RDS 主账号和应用账号密码。密码必须通过 ECS `ValueFrom`引用 Secrets Manager 注入，禁止写入 Task Definition、命令行或日志。
 
 ## 镜像构建与推送

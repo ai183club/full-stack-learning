@@ -1,0 +1,49 @@
+version: 0.2
+
+env:
+  variables:
+    AWS_REGION: ap-northeast-1
+    AWS_ACCOUNT_ID: "017719539487"
+    ECR_REPOSITORY: profile-api
+
+phases:
+  pre_build:
+    commands:
+      - set -eu
+      - ': "${PR_NUMBER:?PR_NUMBER environment variable is required}"'
+      - |
+        case "${PR_NUMBER}" in
+          *[!0-9]* | '' | 0 | 0*) echo "PR_NUMBER must be a positive decimal integer without leading zeroes" >&2; exit 64 ;;
+        esac
+      - test "${#PR_NUMBER}" -le 9
+      - export SOURCE_SHA="${CODEBUILD_RESOLVED_SOURCE_VERSION:?CodeBuild source version is required}"
+      - |
+        case "${SOURCE_SHA}" in
+          *[!0123456789abcdef]* | ?????? | ?????????????????????????????????????????*) echo "source version must be a 7 to 40 character lowercase SHA" >&2; exit 64 ;;
+        esac
+      - export IMAGE_TAG="pr-${PR_NUMBER}-$(printf '%s' "${SOURCE_SHA}" | cut -c1-12)"
+      - export ECR_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}"
+      - aws ecr get-login-password --region "${AWS_REGION}" | docker login --username AWS --password-stdin "${ECR_URI}"
+  build:
+    commands:
+      - docker run --rm --workdir /src --volume "${CODEBUILD_SRC_DIR}/apps/api:/src" golang:1.26-alpine go test ./...
+      - docker build --platform linux/arm64 --tag "${ECR_URI}:${IMAGE_TAG}" apps/api
+  post_build:
+    commands:
+      - docker push "${ECR_URI}:${IMAGE_TAG}"
+      - |
+        IMAGE_DIGEST=""
+        for attempt in $(seq 1 10); do
+          IMAGE_DIGEST="$(aws ecr describe-images --repository-name "${ECR_REPOSITORY}" --image-ids imageTag="${IMAGE_TAG}" --query 'imageDetails[0].imageDigest' --output text --region "${AWS_REGION}")"
+          if [ "${IMAGE_DIGEST}" != "None" ] && [ -n "${IMAGE_DIGEST}" ]; then
+            break
+          fi
+          sleep 2
+        done
+        test "${IMAGE_DIGEST}" != "None"
+        test -n "${IMAGE_DIGEST}"
+        printf '%s\n' "${ECR_URI}@${IMAGE_DIGEST}" > preview-image-uri.txt
+
+artifacts:
+  files:
+    - preview-image-uri.txt
