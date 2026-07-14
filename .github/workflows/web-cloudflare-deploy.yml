@@ -9,6 +9,7 @@ on:
       - "package.json"
       - "pnpm-lock.yaml"
       - "turbo.json"
+      - ".github/workflows/web-cloudflare-deploy.yml"
   workflow_dispatch:
 
 permissions:
@@ -46,7 +47,7 @@ jobs:
         run: |
           set -euo pipefail
           projects="$(npx --yes wrangler@4 pages project list --json)"
-          if printf '%s' "$projects" | jq -e --arg name "$CLOUDFLARE_PAGES_PROJECT" 'if type == "array" then any(.[]; .name == $name) else any(.projects[]?; .name == $name) end' > /dev/null; then
+          if printf '%s' "$projects" | jq -e --arg name "$CLOUDFLARE_PAGES_PROJECT" 'if type == "array" then any(.[]; (.name // .["Project Name"]) == $name) else any(.projects[]?; (.name // .["Project Name"]) == $name) end' > /dev/null; then
             echo "Cloudflare Pages project already exists."
           else
             npx --yes wrangler@4 pages project create "$CLOUDFLARE_PAGES_PROJECT" --production-branch=main
