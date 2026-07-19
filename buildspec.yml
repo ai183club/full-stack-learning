@@ -19,7 +19,7 @@ phases:
       - aws ecr get-login-password --region "${AWS_REGION}" | docker login --username AWS --password-stdin "${ECR_URI}"
   build:
     commands:
-      - docker run --rm --workdir /src --volume "${CODEBUILD_SRC_DIR}/apps/api:/src" golang:1.26-alpine go test ./...
+      - docker run --rm --workdir /src --volume "${CODEBUILD_SRC_DIR}/apps/api:/src" public.ecr.aws/docker/library/golang:1.26-alpine go test ./...
       - docker build --platform linux/arm64 --tag "${ECR_URI}:${IMAGE_TAG}" apps/api
   post_build:
     commands:
