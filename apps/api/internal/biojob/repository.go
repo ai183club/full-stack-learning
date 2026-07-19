@@ -22,10 +22,12 @@ func (r *Repository) CreateOrGet(ctx context.Context, input CreateInput) (Job, e
 	const query = `
 		INSERT INTO bio_generation_jobs (job_id, username, name, status)
 		VALUES (
-			$1,
-			$2,
-			$3,
-			CASE WHEN EXISTS (SELECT 1 FROM profiles WHERE username = $2)
+			$1::varchar(36),
+			$2::varchar(32),
+			$3::varchar(80),
+			CASE WHEN EXISTS (
+				SELECT 1 FROM profiles WHERE username = $2::varchar(32)
+			)
 				THEN 'completed' ELSE 'pending' END
 		)
 		ON CONFLICT (username) DO UPDATE SET
