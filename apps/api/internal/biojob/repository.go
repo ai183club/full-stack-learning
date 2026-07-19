@@ -19,6 +19,8 @@ func NewRepository(pool *pgxpool.Pool) *Repository {
 }
 
 func (r *Repository) CreateOrGet(ctx context.Context, input CreateInput) (Job, error) {
+	// Explicit casts keep PostgreSQL from inferring conflicting text and varchar
+	// types when the same username parameter is used by VALUES and EXISTS.
 	const query = `
 		INSERT INTO bio_generation_jobs (job_id, username, name, status)
 		VALUES (
