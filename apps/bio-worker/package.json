@@ -1,0 +1,15 @@
+{
+  "name": "bio-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "build": "tsc --project tsconfig.json && (cd dist && zip -FS profile-bio-worker.zip index.js handler.js openrouter.js)",
+    "check-types": "tsc --project tsconfig.json --noEmit",
+    "test": "tsc --project tsconfig.json && node --test dist/*.test.js"
+  },
+  "devDependencies": {
+    "@full-stack-learning/config": "workspace:*",
+    "typescript": "catalog:"
+  }
+}

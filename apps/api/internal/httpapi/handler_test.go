@@ -8,9 +8,11 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
+	"full-stack-learning/apps/api/internal/biojob"
 	"full-stack-learning/apps/api/internal/profile"
 )
 
@@ -40,6 +42,32 @@ type fakeDatabasePinger struct {
 	err error
 }
 
+type fakeBioJobManager struct {
+	job     biojob.Job
+	claimed bool
+	err     error
+}
+
+func (f fakeBioJobManager) CreateOrGet(context.Context, biojob.CreateInput) (biojob.Job, error) {
+	return f.job, f.err
+}
+
+func (f fakeBioJobManager) Find(context.Context, string) (biojob.Job, error) {
+	return f.job, f.err
+}
+
+func (f fakeBioJobManager) Claim(context.Context, string, time.Duration) (biojob.ClaimResult, error) {
+	return biojob.ClaimResult{Job: f.job, Claimed: f.claimed}, f.err
+}
+
+func (f fakeBioJobManager) Complete(context.Context, string) (biojob.Job, error) {
+	return f.job, f.err
+}
+
+func (f fakeBioJobManager) RecordFailure(context.Context, string, string, bool) (biojob.Job, error) {
+	return f.job, f.err
+}
+
 func (f fakeDatabasePinger) Ping(context.Context) error {
 	return f.err
 }
@@ -67,6 +95,44 @@ func TestReadyWhenDatabaseIsUnavailable(t *testing.T) {
 
 	if response.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected status %d, got %d", http.StatusServiceUnavailable, response.Code)
+	}
+}
+
+func TestCreateAndFindBioJob(t *testing.T) {
+	jobID := "e52f5f2d-c53c-4c2c-bb10-f378f82acc5d"
+	bio := "Generated bio"
+	jobs := fakeBioJobManager{job: biojob.Job{
+		JobID: jobID, Name: "Alice", Status: biojob.StatusCompleted, Bio: &bio,
+	}}
+	handler := NewHandler(fakeProfileFinder{}, fakeProfileFinder{}, fakeProfileFinder{}, fakeProfileFinder{}, fakeDatabasePinger{})
+	handler.ConfigureBioJobs(jobs, "internal-test-key")
+
+	createResponse := httptest.NewRecorder()
+	createRequest := httptest.NewRequest(
+		http.MethodPost,
+		"/internal/bio-jobs",
+		strings.NewReader(`{"jobId":"e52f5f2d-c53c-4c2c-bb10-f378f82acc5d","username":"bio_1234567890123456789012345678","name":"Alice"}`),
+	)
+	createRequest.Header.Set("X-Profile-Internal-Key", "internal-test-key")
+	handler.Routes().ServeHTTP(createResponse, createRequest)
+	if createResponse.Code != http.StatusOK {
+		t.Fatalf("expected create status 200, got %d: %s", createResponse.Code, createResponse.Body.String())
+	}
+
+	findResponse := httptest.NewRecorder()
+	handler.Routes().ServeHTTP(findResponse, httptest.NewRequest(http.MethodGet, "/api/bio-jobs/"+jobID, nil))
+	if findResponse.Code != http.StatusOK || !strings.Contains(findResponse.Body.String(), `"bio":"Generated bio"`) {
+		t.Fatalf("unexpected find response %d: %s", findResponse.Code, findResponse.Body.String())
+	}
+}
+
+func TestInternalBioJobRoutesRequireKey(t *testing.T) {
+	handler := NewHandler(fakeProfileFinder{}, fakeProfileFinder{}, fakeProfileFinder{}, fakeProfileFinder{}, fakeDatabasePinger{})
+	handler.ConfigureBioJobs(fakeBioJobManager{}, "internal-test-key")
+	response := httptest.NewRecorder()
+	handler.Routes().ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/internal/bio-jobs", strings.NewReader(`{}`)))
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status 401, got %d", response.Code)
 	}
 }
 

@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"io"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"full-stack-learning/apps/api/internal/biojob"
 	"full-stack-learning/apps/api/internal/profile"
 )
 
@@ -36,12 +38,27 @@ type DatabasePinger interface {
 	Ping(ctx context.Context) error
 }
 
+type BioJobManager interface {
+	CreateOrGet(context.Context, biojob.CreateInput) (biojob.Job, error)
+	Find(context.Context, string) (biojob.Job, error)
+	Claim(context.Context, string, time.Duration) (biojob.ClaimResult, error)
+	Complete(context.Context, string) (biojob.Job, error)
+	RecordFailure(context.Context, string, string, bool) (biojob.Job, error)
+}
+
 type Handler struct {
 	profiles ProfileFinder
 	creator  ProfileCreator
 	updater  ProfileUpdater
 	auth     Authenticator
 	database DatabasePinger
+	jobs     BioJobManager
+	jobKey   string
+}
+
+func (h *Handler) ConfigureBioJobs(jobs BioJobManager, internalKey string) {
+	h.jobs = jobs
+	h.jobKey = internalKey
 }
 
 func NewHandler(
@@ -61,8 +78,163 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("POST /api/profiles", h.createProfile)
 	mux.HandleFunc("GET /api/profiles/{username}", h.findProfile)
 	mux.HandleFunc("PATCH /api/profiles/{username}", h.updateProfile)
+	if h.jobs != nil {
+		mux.HandleFunc("GET /api/bio-jobs/{jobId}", h.findBioJob)
+		mux.HandleFunc("POST /internal/bio-jobs", h.createBioJob)
+		mux.HandleFunc("POST /internal/bio-jobs/{jobId}/claim", h.claimBioJob)
+		mux.HandleFunc("POST /internal/bio-jobs/{jobId}/complete", h.completeBioJob)
+		mux.HandleFunc("POST /internal/bio-jobs/{jobId}/fail", h.failBioJob)
+	}
 
 	return mux
+}
+
+var jobIDPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
+var errorCodePattern = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
+
+type createBioJobRequest struct {
+	JobID    string `json:"jobId"`
+	Username string `json:"username"`
+	Name     string `json:"name"`
+}
+
+type failBioJobRequest struct {
+	ErrorCode string `json:"errorCode"`
+	Final     bool   `json:"final"`
+}
+
+func (h *Handler) createBioJob(w http.ResponseWriter, r *http.Request) {
+	if !h.authorizeInternal(r) {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+
+	var request createBioJobRequest
+	if !decodeJSONBody(w, r, &request) {
+		return
+	}
+	request.Name = strings.TrimSpace(request.Name)
+	if !jobIDPattern.MatchString(request.JobID) ||
+		!usernamePattern.MatchString(request.Username) ||
+		utf8.RuneCountInString(request.Name) < 1 ||
+		utf8.RuneCountInString(request.Name) > 80 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid bio job"})
+		return
+	}
+
+	job, err := h.jobs.CreateOrGet(r.Context(), biojob.CreateInput{
+		JobID: request.JobID, Username: request.Username, Name: request.Name,
+	})
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})
+		return
+	}
+	writeJSON(w, http.StatusOK, job)
+}
+
+func (h *Handler) findBioJob(w http.ResponseWriter, r *http.Request) {
+	jobID := r.PathValue("jobId")
+	if !jobIDPattern.MatchString(jobID) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid job id"})
+		return
+	}
+	job, err := h.jobs.Find(r.Context(), jobID)
+	if errors.Is(err, biojob.ErrJobNotFound) {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "bio job not found"})
+		return
+	}
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})
+		return
+	}
+	writeJSON(w, http.StatusOK, job)
+}
+
+func (h *Handler) claimBioJob(w http.ResponseWriter, r *http.Request) {
+	if !h.authorizeInternal(r) {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	jobID := r.PathValue("jobId")
+	if !jobIDPattern.MatchString(jobID) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid job id"})
+		return
+	}
+	result, err := h.jobs.Claim(r.Context(), jobID, 5*time.Minute)
+	if errors.Is(err, biojob.ErrJobNotFound) {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "bio job not found"})
+		return
+	}
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"claimed": result.Claimed, "job": result.Job})
+}
+
+func (h *Handler) completeBioJob(w http.ResponseWriter, r *http.Request) {
+	if !h.authorizeInternal(r) {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	job, err := h.jobs.Complete(r.Context(), r.PathValue("jobId"))
+	if errors.Is(err, biojob.ErrJobNotFound) {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "bio job not found or profile missing"})
+		return
+	}
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})
+		return
+	}
+	writeJSON(w, http.StatusOK, job)
+}
+
+func (h *Handler) failBioJob(w http.ResponseWriter, r *http.Request) {
+	if !h.authorizeInternal(r) {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	var request failBioJobRequest
+	if !decodeJSONBody(w, r, &request) {
+		return
+	}
+	if !errorCodePattern.MatchString(request.ErrorCode) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid error code"})
+		return
+	}
+	job, err := h.jobs.RecordFailure(r.Context(), r.PathValue("jobId"), request.ErrorCode, request.Final)
+	if errors.Is(err, biojob.ErrJobNotFound) {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "bio job not found"})
+		return
+	}
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})
+		return
+	}
+	writeJSON(w, http.StatusOK, job)
+}
+
+func (h *Handler) authorizeInternal(r *http.Request) bool {
+	provided := r.Header.Get("X-Profile-Internal-Key")
+	if h.jobKey == "" || len(provided) != len(h.jobKey) {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(provided), []byte(h.jobKey)) == 1
+}
+
+func decodeJSONBody(w http.ResponseWriter, r *http.Request, destination any) bool {
+	r.Body = http.MaxBytesReader(w, r.Body, 16<<10)
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(destination); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
+		return false
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "request body must contain one JSON object"})
+		return false
+	}
+	return true
 }
 
 type updateProfileRequest struct {
