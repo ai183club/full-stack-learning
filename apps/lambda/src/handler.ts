@@ -26,11 +26,8 @@ type Fetch = (
 type HandlerDependencies = {
 	getBaseUrl: () => string | undefined;
 	fetch: Fetch;
-	generateBio?: (name: string) => Promise<string>;
-	generatePassword?: () => string;
-	generateJobId?: () => string;
-	getInternalKey?: () => string | undefined;
-	publishBioJob?: (event: BioGenerationRequestedEvent) => Promise<void>;
+	generateBio: (name: string) => Promise<string>;
+	generatePassword: () => string;
 	requestTimeoutMs: number;
 	logError: (
 		message: string,
@@ -43,33 +40,13 @@ type HandlerDependencies = {
 	) => void;
 };
 
-type Route =
-	| "health"
-	| "ready"
-	| "create"
-	| "find"
-	| "update"
-	| "generate-bio"
-	| "find-bio-job";
-
-export type BioGenerationRequestedEvent = {
-	eventId: string;
-	eventType: "profile.bio.generation.requested";
-	eventVersion: 1;
-	occurredAt: string;
-	jobId: string;
-	payload: {
-		username: string;
-		name: string;
-	};
-};
+type Route = "health" | "ready" | "create" | "find" | "update" | "generate-bio";
 
 const maxBioCharacters = 500;
 const maxNameCharacters = 80;
 const maxRequestBodyBytes = 16 * 1024;
 const generatedBioPath = "/api/profiles/generate-bio";
 const profilePathPattern = /^\/api\/profiles\/([a-z0-9_]{3,32})$/;
-const bioJobPathPattern = /^\/api\/bio-jobs\/[0-9a-f-]{36}$/;
 
 export function createHandler(dependencies: HandlerDependencies) {
 	return async function handler(
@@ -77,9 +54,6 @@ export function createHandler(dependencies: HandlerDependencies) {
 	): Promise<LambdaResponse> {
 		const method = event.requestContext?.http?.method?.toUpperCase() ?? "GET";
 		const path = event.rawPath ?? event.path ?? "/";
-		if (method === "OPTIONS") {
-			return { statusCode: 204, headers: {}, body: "" };
-		}
 		const route = resolveRoute(method, path);
 
 		if (route === "not-found") {
@@ -99,9 +73,7 @@ export function createHandler(dependencies: HandlerDependencies) {
 		}
 
 		if (route === "generate-bio") {
-			return dependencies.publishBioJob
-				? handleAsyncGenerateBio(event, baseUrl, dependencies)
-				: handleGenerateBio(event, baseUrl, dependencies);
+			return handleGenerateBio(event, baseUrl, dependencies);
 		}
 
 		let body: string | undefined;
@@ -144,84 +116,6 @@ export function createHandler(dependencies: HandlerDependencies) {
 	};
 }
 
-async function handleAsyncGenerateBio(
-	event: LambdaEvent,
-	baseUrl: string,
-	dependencies: HandlerDependencies,
-): Promise<LambdaResponse> {
-	const bodyResult = parseRequestBody(event);
-	if (!bodyResult.ok) {
-		return jsonResponse(bodyResult.statusCode, { message: bodyResult.message });
-	}
-	const nameResult = validateAndNormalizeName(bodyResult.value);
-	if (!nameResult.ok) return jsonResponse(400, { message: nameResult.message });
-
-	const internalKey = dependencies.getInternalKey?.();
-	const generateJobId = dependencies.generateJobId;
-	const publishBioJob = dependencies.publishBioJob;
-	const candidateJobId = generateJobId?.();
-	if (!internalKey || !candidateJobId || !generateJobId || !publishBioJob) {
-		dependencies.logError("async bio configuration is incomplete", {
-			path: generatedBioPath,
-			isTimeout: false,
-		});
-		return jsonResponse(500, { message: "async job configuration error" });
-	}
-
-	const username = deriveGeneratedUsername(nameResult.nameKey);
-	const upstream = await requestProfileApi(dependencies, {
-		baseUrl,
-		path: "/internal/bio-jobs",
-		method: "POST",
-		internalKey,
-		body: JSON.stringify({
-			jobId: candidateJobId,
-			username,
-			name: nameResult.displayName,
-		}),
-	});
-	if (!isSuccessful(upstream.statusCode)) return upstream;
-
-	let job: { jobId: string; name: string; status: string };
-	try {
-		const parsed: unknown = JSON.parse(upstream.body);
-		if (
-			!isRecord(parsed) ||
-			typeof parsed.jobId !== "string" ||
-			typeof parsed.name !== "string" ||
-			typeof parsed.status !== "string"
-		) {
-			throw new Error("invalid job response");
-		}
-		job = { jobId: parsed.jobId, name: parsed.name, status: parsed.status };
-	} catch {
-		return jsonResponse(502, { message: "invalid upstream response" });
-	}
-
-	if (job.status === "pending") {
-		const jobEvent: BioGenerationRequestedEvent = {
-			eventId: generateJobId(),
-			eventType: "profile.bio.generation.requested",
-			eventVersion: 1,
-			occurredAt: new Date().toISOString(),
-			jobId: job.jobId,
-			payload: { username, name: job.name },
-		};
-		try {
-			await publishBioJob(jobEvent);
-		} catch {
-			dependencies.logError("publish bio job failed", {
-				path: generatedBioPath,
-				isTimeout: false,
-				reason: "sns-publish-failed",
-			});
-			return jsonResponse(503, { message: "job queue unavailable" });
-		}
-	}
-
-	return jsonResponse(202, { jobId: job.jobId, status: job.status });
-}
-
 async function handleGenerateBio(
 	event: LambdaEvent,
 	baseUrl: string,
@@ -235,9 +129,6 @@ async function handleGenerateBio(
 	const nameResult = validateAndNormalizeName(bodyResult.value);
 	if (!nameResult.ok) {
 		return jsonResponse(400, { message: nameResult.message });
-	}
-	if (!dependencies.generateBio || !dependencies.generatePassword) {
-		return jsonResponse(500, { message: "model configuration error" });
 	}
 
 	const username = deriveGeneratedUsername(nameResult.nameKey);
@@ -348,7 +239,6 @@ type ProfileRequest = {
 	method: string;
 	body?: string;
 	authorization?: string;
-	internalKey?: string;
 };
 
 async function requestProfileApi(
@@ -365,9 +255,6 @@ async function requestProfileApi(
 	}
 	if (request.authorization) {
 		headers.authorization = request.authorization;
-	}
-	if (request.internalKey) {
-		headers["x-profile-internal-key"] = request.internalKey;
 	}
 
 	const controller = new AbortController();
@@ -456,9 +343,6 @@ function resolveRoute(
 	}
 	if (path === generatedBioPath) {
 		return method === "POST" ? "generate-bio" : "method-not-allowed";
-	}
-	if (bioJobPathPattern.test(path)) {
-		return method === "GET" ? "find-bio-job" : "method-not-allowed";
 	}
 	if (path === "/api/profiles") {
 		return method === "POST" ? "create" : "method-not-allowed";
@@ -573,7 +457,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function jsonResponse(
 	statusCode: number,
-	body: Record<string, unknown>,
+	body: Record<string, string>,
 ): LambdaResponse {
 	return {
 		statusCode,

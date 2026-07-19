@@ -1,17 +1,7 @@
-import { randomBytes, randomUUID } from "node:crypto";
-
-import { SNSClient } from "@aws-sdk/client-sns";
+import { randomBytes } from "node:crypto";
 
 import { createHandler } from "./handler.js";
 import { createOpenRouterBioGenerator } from "./openrouter.js";
-import { createBioJobPublisher } from "./sns.js";
-
-const publishBioJob = process.env.BIO_JOB_TOPIC_ARN
-	? createBioJobPublisher({
-			client: new SNSClient({}),
-			getTopicArn: () => process.env.BIO_JOB_TOPIC_ARN,
-		})
-	: undefined;
 
 const generateBio = createOpenRouterBioGenerator({
 	fetch: globalThis.fetch,
@@ -26,9 +16,6 @@ const profileHandler = createHandler({
 	fetch: globalThis.fetch,
 	generateBio,
 	generatePassword: () => randomBytes(32).toString("base64url"),
-	generateJobId: randomUUID,
-	getInternalKey: () => process.env.BIO_JOB_INTERNAL_KEY,
-	...(publishBioJob ? { publishBioJob } : {}),
 	requestTimeoutMs: 5_000,
 	logError: (message, context) => console.error(message, context),
 });

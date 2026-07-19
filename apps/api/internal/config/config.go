@@ -17,7 +17,6 @@ type Config struct {
 	HTTPPort           string
 	Database           DatabaseConfig
 	CORSAllowedOrigins []string
-	BioJobInternalKey  string
 }
 
 type DatabaseConfig struct {
@@ -46,7 +45,6 @@ func Load() (Config, error) {
 			Schema:      getEnv("DATABASE_SCHEMA", "public"),
 		},
 		CORSAllowedOrigins: splitCSV(getEnv("CORS_ALLOWED_ORIGINS", "")),
-		BioJobInternalKey:  getEnv("BIO_JOB_INTERNAL_KEY", ""),
 	}
 
 	if cfg.Database.User == "" {

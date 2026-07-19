@@ -30,22 +30,6 @@ Lambda 通过环境变量 `PROFILE_API_BASE_URL` 访问 Cloud Map DNS 名称：
 http://profile-api.app.internal:8080
 ```
 
-## Async bio cutover
-
-When `BIO_JOB_TOPIC_ARN` is absent, the Lambda preserves the existing synchronous
-OpenRouter flow. When it is present, `POST /api/profiles/generate-bio` creates a
-database-backed job, publishes `profile.bio.generation.requested`, and returns
-`202 + jobId`.
-
-Required for async mode:
-
-- `BIO_JOB_TOPIC_ARN`
-- `BIO_JOB_INTERNAL_KEY`, matching Go and `profile-bio-worker`
-- execution-role permission to publish only to `profile-domain-events`
-
-After the worker path is fully verified, remove `OPENROUTER_API_KEY` and
-`OPENROUTER_MODEL` from this API Lambda. The key then exists only on the worker.
-
 它不持有数据库凭据，也不连接 RDS。
 
 OpenRouter配置只属于Lambda运行环境：
