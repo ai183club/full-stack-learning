@@ -1,8 +1,9 @@
 "use client";
 
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 
 import {
+	type BioJobStatus,
 	generateOrGetBio,
 	ProfileApiError,
 	type PublicBio,
@@ -13,6 +14,10 @@ export default function Home() {
 	const [profile, setProfile] = useState<PublicBio | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [isSubmitting, setIsSubmitting] = useState(false);
+	const [jobStatus, setJobStatus] = useState<BioJobStatus | null>(null);
+	const requestController = useRef<AbortController | null>(null);
+
+	useEffect(() => () => requestController.current?.abort(), []);
 
 	async function handleSubmit(event: FormEvent<HTMLFormElement>) {
 		event.preventDefault();
@@ -31,12 +36,24 @@ export default function Home() {
 		}
 
 		setError(null);
+		setJobStatus("pending");
 		setIsSubmitting(true);
+		requestController.current?.abort();
+		const controller = new AbortController();
+		requestController.current = controller;
 		try {
-			const result = await generateOrGetBio(trimmedName);
+			const result = await generateOrGetBio(trimmedName, {
+				signal: controller.signal,
+				onStatus: setJobStatus,
+			});
 			setProfile(result);
 			setName(result.name);
 		} catch (requestError) {
+			if (
+				requestError instanceof DOMException &&
+				requestError.name === "AbortError"
+			)
+				return;
 			setProfile(null);
 			setError(
 				requestError instanceof ProfileApiError
@@ -44,7 +61,10 @@ export default function Home() {
 					: "暂时无法生成 Bio，请稍后再试",
 			);
 		} finally {
-			setIsSubmitting(false);
+			if (requestController.current === controller) {
+				requestController.current = null;
+				setIsSubmitting(false);
+			}
 		}
 	}
 
@@ -85,7 +105,7 @@ export default function Home() {
 							{isSubmitting ? (
 								<>
 									<span className="button-spinner" aria-hidden="true" />
-									正在生成
+									{jobStatus === "pending" ? "正在排队" : "正在生成"}
 								</>
 							) : (
 								<>
@@ -97,6 +117,13 @@ export default function Home() {
 				</form>
 
 				<div className="response-region" aria-live="polite">
+					{isSubmitting ? (
+						<p className="result-label">
+							{jobStatus === "pending"
+								? "任务已进入队列"
+								: "Worker 正在生成 Bio"}
+						</p>
+					) : null}
 					{error ? (
 						<p id="profile-error" className="form-error" role="alert">
 							{error}

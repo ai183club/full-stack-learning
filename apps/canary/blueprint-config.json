@@ -1,0 +1,91 @@
+{
+  "globalSettings": {
+    "stepTimeout": 30000
+  },
+  "variables": {
+    "webUrl": "https://full-stack.seebyte.xyz",
+    "apiBaseUrl": "https://f7a52mymmg.execute-api.ap-northeast-1.amazonaws.com"
+  },
+  "steps": {
+    "1": {
+      "stepName": "web-home",
+      "checkerType": "HTTP",
+      "url": "${webUrl}",
+      "httpMethod": "GET",
+      "headers": {
+        "Accept": "text/html"
+      },
+      "assertions": [
+        {
+          "type": "STATUS_CODE",
+          "operator": "EQUALS",
+          "value": 200
+        },
+        {
+          "type": "HEADER",
+          "headerName": "Content-Type",
+          "operator": "CONTAINS",
+          "value": "text/html"
+        }
+      ]
+    },
+    "2": {
+      "stepName": "api-health",
+      "checkerType": "HTTP",
+      "url": "${apiBaseUrl}/health",
+      "httpMethod": "GET",
+      "headers": {
+        "Accept": "application/json"
+      },
+      "assertions": [
+        {
+          "type": "STATUS_CODE",
+          "operator": "EQUALS",
+          "value": 200
+        },
+        {
+          "type": "HEADER",
+          "headerName": "Content-Type",
+          "operator": "CONTAINS",
+          "value": "application/json"
+        },
+        {
+          "type": "BODY",
+          "target": "JSON",
+          "path": "$.status",
+          "operator": "EQUALS",
+          "value": "ok"
+        }
+      ]
+    },
+    "3": {
+      "stepName": "api-ready",
+      "checkerType": "HTTP",
+      "url": "${apiBaseUrl}/ready",
+      "httpMethod": "GET",
+      "headers": {
+        "Accept": "application/json"
+      },
+      "assertions": [
+        {
+          "type": "STATUS_CODE",
+          "operator": "EQUALS",
+          "value": 200
+        },
+        {
+          "type": "HEADER",
+          "headerName": "Content-Type",
+          "operator": "CONTAINS",
+          "value": "application/json"
+        },
+        {
+          "type": "BODY",
+          "target": "JSON",
+          "path": "$.status",
+          "operator": "EQUALS",
+          "value": "ready"
+        }
+      ]
+    }
+  }
+}

@@ -569,3 +569,90 @@ test("maps OpenRouter failures without exposing API details", async () => {
 	]);
 	assert.equal(JSON.stringify(logs).includes("highly-secret-key"), false);
 });
+
+test("creates a pending job, publishes a versioned event, and returns 202", async () => {
+	const published: unknown[] = [];
+	const calls: FetchCall[] = [];
+	const ids = [
+		"e52f5f2d-c53c-4c2c-bb10-f378f82acc5d",
+		"4dd5adf5-1501-4c87-a247-78b24bb0b21a",
+	];
+	const handler = createHandler({
+		getBaseUrl: () => "http://profile-api.app.internal:8080",
+		fetch: async (input, init) => {
+			calls.push({ url: input.toString(), init });
+			return new Response(
+				JSON.stringify({
+					jobId: "e52f5f2d-c53c-4c2c-bb10-f378f82acc5d",
+					name: "Alice",
+					status: "pending",
+				}),
+				{ status: 200, headers: { "content-type": "application/json" } },
+			);
+		},
+		generateJobId: () => ids.shift() ?? "unexpected-id",
+		getInternalKey: () => "internal-test-key",
+		publishBioJob: async (jobEvent) => {
+			published.push(jobEvent);
+		},
+		requestTimeoutMs: 5_000,
+		logError: () => undefined,
+	});
+
+	const result = await handler(
+		event("POST", "/api/profiles/generate-bio", {
+			body: JSON.stringify({ name: " Alice " }),
+		}),
+	);
+
+	assert.equal(result.statusCode, 202);
+	assert.deepEqual(JSON.parse(result.body), {
+		jobId: "e52f5f2d-c53c-4c2c-bb10-f378f82acc5d",
+		status: "pending",
+	});
+	assert.equal(calls.length, 1);
+	assert.equal(
+		calls[0]?.url,
+		"http://profile-api.app.internal:8080/internal/bio-jobs",
+	);
+	assert.equal(
+		(calls[0]?.init?.headers as Record<string, string> | undefined)?.[
+			"x-profile-internal-key"
+		],
+		"internal-test-key",
+	);
+	assert.equal(published.length, 1);
+	const publishedEvent = published[0] as { occurredAt: string };
+	assert.match(publishedEvent.occurredAt, /^\d{4}-\d{2}-\d{2}T/);
+	assert.deepEqual(
+		[{ ...publishedEvent, occurredAt: "timestamp" }],
+		[
+			{
+				eventId: "4dd5adf5-1501-4c87-a247-78b24bb0b21a",
+				eventType: "profile.bio.generation.requested",
+				eventVersion: 1,
+				occurredAt: "timestamp",
+				jobId: "e52f5f2d-c53c-4c2c-bb10-f378f82acc5d",
+				payload: {
+					username: deriveGeneratedUsername("alice"),
+					name: "Alice",
+				},
+			},
+		],
+	);
+});
+
+test("forwards public bio job status reads", async () => {
+	const { handler, calls } = createSuccessfulHandler(
+		200,
+		JSON.stringify({
+			jobId: "e52f5f2d-c53c-4c2c-bb10-f378f82acc5d",
+			status: "running",
+		}),
+	);
+	const result = await handler(
+		event("GET", "/api/bio-jobs/e52f5f2d-c53c-4c2c-bb10-f378f82acc5d"),
+	);
+	assert.equal(result.statusCode, 200);
+	assert.equal(calls.length, 1);
+});

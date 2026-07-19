@@ -48,8 +48,27 @@ CREATE TABLE IF NOT EXISTS public.profiles (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS public.bio_generation_jobs (
+    job_id VARCHAR(36) PRIMARY KEY,
+    username VARCHAR(32) NOT NULL UNIQUE,
+    name VARCHAR(80) NOT NULL,
+    status VARCHAR(16) NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending', 'running', 'completed', 'failed')),
+    error_code VARCHAR(64),
+    attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+    lease_expires_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 SELECT format(
     'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.profiles TO %I',
+    :'app_user'
+)
+\gexec
+
+SELECT format(
+    'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.bio_generation_jobs TO %I',
     :'app_user'
 )
 \gexec

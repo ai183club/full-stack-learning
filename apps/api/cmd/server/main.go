@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"full-stack-learning/apps/api/internal/biojob"
 	"full-stack-learning/apps/api/internal/config"
 	"full-stack-learning/apps/api/internal/database"
 	"full-stack-learning/apps/api/internal/httpapi"
@@ -37,6 +38,12 @@ func main() {
 	profileRepository := profile.NewRepository(pool)
 	profileService := profile.NewService(profileRepository)
 	handler := httpapi.NewHandler(profileService, profileService, profileService, profileService, pool)
+	if cfg.BioJobInternalKey != "" {
+		jobRepository := biojob.NewRepository(pool)
+		handler.ConfigureBioJobs(biojob.NewService(jobRepository), cfg.BioJobInternalKey)
+	} else {
+		logger.Warn("bio job routes are disabled because BIO_JOB_INTERNAL_KEY is empty")
+	}
 	server := &http.Server{
 		Addr:              ":" + cfg.HTTPPort,
 		Handler:           httpapi.WithCORS(handler.Routes(), cfg.CORSAllowedOrigins),
